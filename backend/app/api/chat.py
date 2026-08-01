@@ -8,6 +8,8 @@ from app.assistant.agent import document_agent
 from app.assistant.deps import StageCallback
 from app.auth.dependencies import AuthenticatedUser, get_current_user
 from app.chat.orchestrator import run_chat_turn
+from app.chat.quick_rag import QuickRagRunner
+from app.chat.routing import ChatRouter
 from app.chat.schemas import (
     ChatMessageResponse,
     ChatThreadResponse,
@@ -43,11 +45,21 @@ def get_grounding_validator() -> GroundingValidator:
     return GroundingValidator()
 
 
+def get_chat_router() -> ChatRouter:
+    return ChatRouter()
+
+
+def get_quick_rag_runner() -> QuickRagRunner:
+    return QuickRagRunner()
+
+
 CurrentUser = Annotated[AuthenticatedUser, Depends(get_current_user)]
 ChatStoreDependency = Annotated[ChatStore, Depends(get_chat_store)]
 RetrieverDependency = Annotated[DocumentRetriever, Depends(get_document_retriever)]
 AgentDependency = Annotated[object, Depends(get_agent_runner)]
 GroundingDependency = Annotated[GroundingValidator, Depends(get_grounding_validator)]
+RouterDependency = Annotated[ChatRouter, Depends(get_chat_router)]
+QuickRagDependency = Annotated[QuickRagRunner, Depends(get_quick_rag_runner)]
 
 
 def map_thread_error(error: Exception) -> HTTPException:
@@ -182,6 +194,8 @@ async def stream_chat(
     retriever: RetrieverDependency,
     agent_runner: AgentDependency,
     grounding_validator: GroundingDependency,
+    chat_router: RouterDependency,
+    quick_rag_runner: QuickRagDependency,
 ) -> StreamingResponse:
     try:
         await store.get_thread(user.id, request.thread_id)
@@ -196,6 +210,8 @@ async def stream_chat(
             thread_id=request.thread_id,
             user_text=user_text,
             store=store,
+            router=chat_router,
+            quick_rag_runner=quick_rag_runner,
             agent_runner=agent_runner,
             retriever=retriever,
             grounding_validator=grounding_validator,

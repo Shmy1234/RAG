@@ -9,13 +9,16 @@ from pydantic_ai.exceptions import UsageLimitExceeded
 
 from app.api.chat import (
     get_agent_runner,
+    get_chat_router,
     get_chat_store,
     get_document_retriever,
     get_grounding_validator,
+    get_quick_rag_runner,
 )
 from app.assistant.outputs import GroundedAnswer
 from app.auth.dependencies import AuthenticatedUser, get_current_user
 from app.chat.stub_stream import build_stub_reply
+from app.chat.routing import RouteDecision
 from app.database.chats import ForbiddenThreadError, ThreadNotFoundError
 from app.main import app
 
@@ -106,6 +109,25 @@ class FakeGroundingValidator:
         return answer
 
 
+class FakeRouter:
+    def __init__(self, decision: RouteDecision):
+        self.decision = decision
+
+    async def route(self, prompt: str):
+        return self.decision
+
+
+class FakeQuickRagRunner:
+    def __init__(self, answer: GroundedAnswer | None = None):
+        self.answer = answer or GroundedAnswer(answer="The corpus does not contain enough evidence.")
+        self.calls = 0
+
+    async def run(self, prompt, *, retriever, grounding_validator, on_stage):
+        self.calls += 1
+        await on_stage("searching")
+        return self.answer
+
+
 @pytest.fixture
 def store() -> MemoryChatStore:
     return MemoryChatStore()
@@ -152,6 +174,10 @@ async def test_stream_persists_messages_and_returns_stub(user, store):
     app.dependency_overrides[get_document_retriever] = lambda: FakeRetriever()
     app.dependency_overrides[get_agent_runner] = lambda: FakeAgent()
     app.dependency_overrides[get_grounding_validator] = lambda: FakeGroundingValidator()
+    app.dependency_overrides[get_chat_router] = lambda: FakeRouter(
+        RouteDecision(route="direct", answer=build_stub_reply("What changed?"))
+    )
+    app.dependency_overrides[get_quick_rag_runner] = lambda: FakeQuickRagRunner()
     await store.create_thread(user.id, "Apple revenue mix")
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
@@ -167,6 +193,38 @@ async def test_stream_persists_messages_and_returns_stub(user, store):
     assert '"type": "text-delta"' in response.text
     assert '"type": "finish"' in response.text
     assert [message["role"] for message in store.messages] == ["user", "assistant"]
+
+
+@pytest.mark.anyio
+async def test_stream_can_select_quick_rag_without_running_deep_agent(user, store):
+    async def override_user():
+        return user
+
+    quick = FakeQuickRagRunner()
+    app.dependency_overrides[get_current_user] = override_user
+    app.dependency_overrides[get_chat_store] = lambda: store
+    app.dependency_overrides[get_document_retriever] = lambda: FakeRetriever()
+    app.dependency_overrides[get_agent_runner] = lambda: ExhaustedAgent()
+    app.dependency_overrides[get_grounding_validator] = lambda: FakeGroundingValidator()
+    app.dependency_overrides[get_chat_router] = lambda: FakeRouter(
+        RouteDecision(route="quick_rag")
+    )
+    app.dependency_overrides[get_quick_rag_runner] = lambda: quick
+    await store.create_thread(user.id, "Apple revenue mix")
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/chat/stream",
+            json={
+                "threadId": str(store.thread_id),
+                "messages": [{"role": "user", "content": "What changed?"}],
+            },
+        )
+
+    assert response.status_code == status.HTTP_200_OK
+    assert quick.calls == 1
+    assert '"stage": "routing"' in response.text
+    assert '"stage": "searching"' in response.text
 
 
 @pytest.mark.anyio
@@ -215,6 +273,10 @@ async def test_stream_returns_controlled_error_when_agent_exhausts_budget(user, 
     app.dependency_overrides[get_document_retriever] = lambda: FakeRetriever()
     app.dependency_overrides[get_agent_runner] = lambda: ExhaustedAgent()
     app.dependency_overrides[get_grounding_validator] = lambda: FakeGroundingValidator()
+    app.dependency_overrides[get_chat_router] = lambda: FakeRouter(
+        RouteDecision(route="deep_rag")
+    )
+    app.dependency_overrides[get_quick_rag_runner] = lambda: FakeQuickRagRunner()
     await store.create_thread(user.id, "Apple revenue mix")
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:

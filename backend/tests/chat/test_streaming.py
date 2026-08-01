@@ -39,6 +39,7 @@ def stages_in(parts: list[str]) -> list[str]:
 
 def test_stream_chat_turn_emits_stages_in_order_before_the_answer():
     async def run_turn(on_stage):
+        await on_stage("routing")
         await on_stage("searching")
         await on_stage("analyzing")
         await on_stage("validating")
@@ -47,11 +48,23 @@ def test_stream_chat_turn_emits_stages_in_order_before_the_answer():
 
     parts = collect_turn(run_turn)
 
-    assert stages_in(parts) == ["searching", "analyzing", "validating", "saving"]
+    assert stages_in(parts) == ["routing", "searching", "analyzing", "validating", "saving"]
     last_status = max(index for index, part in enumerate(parts) if '"data-status"' in part)
     first_delta = min(index for index, part in enumerate(parts) if '"text-delta"' in part)
     assert last_status < first_delta
     assert parts[-1] == 'data: {"type": "finish", "finishReason": "stop"}\n\n'
+
+
+def test_stream_chat_turn_accepts_short_non_rag_stage_sequence():
+    async def run_turn(on_stage):
+        await on_stage("routing")
+        await on_stage("saving")
+        return GroundedAnswer(answer="Hello.")
+
+    parts = collect_turn(run_turn)
+
+    assert stages_in(parts) == ["routing", "saving"]
+    assert any('"delta": "Hello."' in part for part in parts)
 
 
 def test_stream_chat_turn_reports_retrieval_failure_without_answer_text():
