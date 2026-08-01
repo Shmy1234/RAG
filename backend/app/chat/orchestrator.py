@@ -1,8 +1,9 @@
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from time import monotonic
 from typing import Protocol
 from uuid import UUID
 
+import structlog
 from pydantic_ai.usage import UsageLimits
 
 from app.assistant.agent import agent_usage_limits
@@ -11,6 +12,9 @@ from app.assistant.outputs import GroundedAnswer
 from app.chat.routing import RouteDecision
 from app.grounding.validator import GroundingValidator
 from app.retrieval.retriever import DocumentRetriever
+
+logger = structlog.get_logger(__name__)
+AnswerCallback = Callable[[GroundedAnswer], Awaitable[None]]
 
 
 class ChatStoreLike(Protocol):
@@ -68,6 +72,7 @@ async def run_chat_turn(
     retriever: DocumentRetriever,
     grounding_validator: GroundingValidator,
     on_stage: StageCallback | None = None,
+    on_answer_ready: AnswerCallback | None = None,
     clock: Callable[[], float] = monotonic,
 ) -> GroundedAnswer:
     report_stage = on_stage or ignore_stage
@@ -92,6 +97,9 @@ async def run_chat_turn(
     )
     execution_ms = _elapsed_ms(execution_started, clock())
 
+    if decision.route == "instant" and on_answer_ready is not None:
+        await on_answer_ready(answer)
+
     citation_data = [citation.model_dump(mode="json") for citation in answer.citations]
     message_data: dict[str, object] = {
         "phase": 8,
@@ -106,6 +114,12 @@ async def run_chat_turn(
         answer.answer,
         message_data,
         citation_data,
+    )
+    logger.info(
+        "chat_turn_completed",
+        route=decision.route,
+        routing_ms=routing_ms,
+        execution_ms=execution_ms,
     )
     return answer
 

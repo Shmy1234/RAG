@@ -8,7 +8,9 @@ from app.assistant.outputs import GroundedAnswer
 from app.chat.stages import ErrorCode, RetrievalError, Stage
 from app.grounding.validator import GroundingError
 
-TurnRunner = Callable[[Callable[[Stage], Awaitable[None]]], Awaitable[GroundedAnswer]]
+StageReporter = Callable[[Stage], Awaitable[None]]
+AnswerReporter = Callable[[GroundedAnswer], Awaitable[None]]
+TurnRunner = Callable[[StageReporter, AnswerReporter], Awaitable[GroundedAnswer]]
 logger = structlog.get_logger(__name__)
 
 
@@ -39,17 +41,21 @@ async def stream_chat_turn(
     if chunk_size < 1:
         raise ValueError("chunk_size must be greater than zero")
 
-    queue: asyncio.Queue[Stage | None] = asyncio.Queue()
+    queue: asyncio.Queue[Stage | GroundedAnswer | None] = asyncio.Queue()
     current_stage: Stage | None = None
+    answer_was_streamed = False
 
     async def report_stage(stage: Stage) -> None:
         nonlocal current_stage
         current_stage = stage
         await queue.put(stage)
 
+    async def report_answer(answer: GroundedAnswer) -> None:
+        await queue.put(answer)
+
     async def runner() -> GroundedAnswer:
         try:
-            return await run_turn(report_stage)
+            return await run_turn(report_stage, report_answer)
         finally:
             await queue.put(None)
 
@@ -57,10 +63,15 @@ async def stream_chat_turn(
     yield _event({"type": "start", "messageId": "assistant-message"})
 
     while True:
-        stage = await queue.get()
-        if stage is None:
+        update = await queue.get()
+        if update is None:
             break
-        yield _event({"type": "data-status", "data": {"stage": stage}})
+        if isinstance(update, GroundedAnswer):
+            answer_was_streamed = True
+            async for event in _answer_content_events(update, chunk_size):
+                yield event
+            continue
+        yield _event({"type": "data-status", "data": {"stage": update}})
 
     code: ErrorCode
     try:
@@ -78,8 +89,11 @@ async def stream_chat_turn(
         code = "processing_failed"
         logger.exception("chat_turn_failed", error_code=code, stage=current_stage)
     else:
-        async for event in _answer_events(answer, chunk_size):
-            yield event
+        if answer_was_streamed:
+            yield _event({"type": "finish", "finishReason": "stop"})
+        else:
+            async for event in _answer_events(answer, chunk_size):
+                yield event
         return
 
     # Only the code crosses the wire — exception text never reaches the browser.
@@ -88,6 +102,12 @@ async def stream_chat_turn(
 
 
 async def _answer_events(answer: GroundedAnswer, chunk_size: int) -> AsyncIterator[str]:
+    async for event in _answer_content_events(answer, chunk_size):
+        yield event
+    yield _event({"type": "finish", "finishReason": "stop"})
+
+
+async def _answer_content_events(answer: GroundedAnswer, chunk_size: int) -> AsyncIterator[str]:
     yield _event({"type": "text-start", "id": "text-1"})
     for start in range(0, len(answer.answer), chunk_size):
         chunk = answer.answer[start : start + chunk_size]
@@ -96,7 +116,6 @@ async def _answer_events(answer: GroundedAnswer, chunk_size: int) -> AsyncIterat
     citation_data = [citation.model_dump(mode="json") for citation in answer.citations]
     yield _event({"type": "text-end", "id": "text-1"})
     yield _event({"type": "data-citations", "data": citation_data})
-    yield _event({"type": "finish", "finishReason": "stop"})
 
 
 def _event(payload: dict[str, object]) -> str:

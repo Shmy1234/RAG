@@ -204,7 +204,7 @@ async def stream_chat(
 
     user_text = latest_user_text(request.messages)
 
-    async def run_turn(on_stage: StageCallback):
+    async def run_turn(on_stage: StageCallback, on_answer_ready):
         return await run_chat_turn(
             user_id=user.id,
             thread_id=request.thread_id,
@@ -216,6 +216,7 @@ async def stream_chat(
             retriever=retriever,
             grounding_validator=grounding_validator,
             on_stage=on_stage,
+            on_answer_ready=on_answer_ready,
         )
 
     # Auth and ownership already failed as HTTP above. Everything from here runs

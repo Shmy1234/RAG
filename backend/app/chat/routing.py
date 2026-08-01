@@ -10,6 +10,7 @@ from pydantic_ai.usage import UsageLimits
 from app.config import settings
 
 ChatRoute = Literal["instant", "direct", "quick_rag", "deep_rag"]
+ModelChatRoute = Literal["direct", "quick_rag", "deep_rag"]
 
 ROUTING_INSTRUCTIONS = """You route requests for an SEC filing research assistant.
 
@@ -27,6 +28,22 @@ RAG routes must leave the answer field empty.
 """
 
 _TRAILING_PUNCTUATION = re.compile(r"[.!?]+$")
+_SAFE_DIRECT_PATTERNS = tuple(
+    re.compile(pattern)
+    for pattern in (
+        (
+            r"^(?:what can you (?:do|help me (?:do|with))|what do you do|"
+            r"how can you help(?: me)?|how do i use (?:this|the) (?:app|workspace)|"
+            r"help me use (?:this|the) (?:app|workspace))\??$"
+        ),
+        (
+            r"^(?:rewrite|rephrase|proofread|edit|translate|summarize|explain) "
+            r"(?:this|the following)(?: text| passage)?\s*[:\-]\s*\S+"
+        ),
+        r"^(?:draft|write) (?:an? )?(?:email|message|outline|template)\b",
+        r"^(?:tell me a joke|brainstorm\b|help me phrase\b)",
+    )
+)
 _INSTANT_RESPONSES = {
     "hi": "Hi! How can I help with your filing research?",
     "hello": "Hello! How can I help with your filing research?",
@@ -50,6 +67,20 @@ class RouteDecision(BaseModel):
         return self
 
 
+class ModelRouteDecision(BaseModel):
+    route: ModelChatRoute
+    answer: str | None = None
+
+    @model_validator(mode="after")
+    def require_route_appropriate_answer(self) -> "ModelRouteDecision":
+        has_answer = bool(self.answer and self.answer.strip())
+        if self.route == "direct" and not has_answer:
+            raise ValueError("direct routes require an answer")
+        if self.route in {"quick_rag", "deep_rag"} and has_answer:
+            raise ValueError("RAG routes must not include an answer")
+        return self
+
+
 class RouteRunner(Protocol):
     async def run(self, prompt: str, *, usage_limits: UsageLimits): ...
 
@@ -61,7 +92,7 @@ _fast_model = OpenAIChatModel(
 
 route_agent = Agent(
     _fast_model,
-    output_type=RouteDecision,
+    output_type=ModelRouteDecision,
     instructions=ROUTING_INSTRUCTIONS,
     retries=1,
 )
@@ -69,8 +100,13 @@ route_agent = Agent(
 
 def instant_response(prompt: str) -> str | None:
     normalized = " ".join(prompt.split()).casefold()
-    normalized = _TRAILING_PUNCTUATION.sub("", normalized)
+    normalized = _TRAILING_PUNCTUATION.sub("", normalized).strip()
     return _INSTANT_RESPONSES.get(normalized)
+
+
+def direct_response_allowed(prompt: str) -> bool:
+    normalized = " ".join(prompt.split()).casefold()
+    return any(pattern.match(normalized) for pattern in _SAFE_DIRECT_PATTERNS)
 
 
 class ChatRouter:
@@ -83,4 +119,7 @@ class ChatRouter:
             return RouteDecision(route="instant", answer=response)
 
         result = await self._runner.run(prompt, usage_limits=UsageLimits(request_limit=1))
-        return result.output
+        decision = result.output
+        if decision.route == "direct" and not direct_response_allowed(prompt):
+            return RouteDecision(route="quick_rag")
+        return RouteDecision(route=decision.route, answer=decision.answer)

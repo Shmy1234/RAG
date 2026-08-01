@@ -225,3 +225,54 @@ def test_deep_rag_does_not_persist_assistant_on_grounding_failure():
 
     assert [message["role"] for message in store.messages] == ["user"]
     assert store.grounded_calls == []
+
+
+def test_successful_turn_logs_route_and_timings_without_prompt(monkeypatch):
+    logged = []
+
+    class FakeLogger:
+        def info(self, event, **context):
+            logged.append((event, context))
+
+    monkeypatch.setattr("app.chat.orchestrator.logger", FakeLogger())
+
+    run_turn(RouteDecision(route="direct", answer="Hello."))
+
+    assert logged == [
+        (
+            "chat_turn_completed",
+            {"route": "direct", "routing_ms": 10, "execution_ms": 20},
+        )
+    ]
+
+
+def test_instant_route_publishes_answer_before_assistant_persistence():
+    order = []
+
+    class OrderedStore(FakeStore):
+        async def append_grounded_answer(self, thread_id, content, message_data, citations):
+            order.append("saving")
+            return await super().append_grounded_answer(
+                thread_id, content, message_data, citations
+            )
+
+    async def publish(answer):
+        order.append(("answer", answer.answer))
+
+    asyncio.run(
+        run_chat_turn(
+            user_id=uuid4(),
+            thread_id=uuid4(),
+            user_text="Hi",
+            store=OrderedStore(),
+            router=FakeRouter(RouteDecision(route="instant", answer="Hello.")),
+            quick_rag_runner=FakeQuickRagRunner(),
+            agent_runner=EvidenceAgent(),
+            retriever=FakeRetriever(),
+            grounding_validator=GroundingValidator(),
+            on_answer_ready=publish,
+            clock=clock(),
+        )
+    )
+
+    assert order == [("answer", "Hello."), "saving"]
