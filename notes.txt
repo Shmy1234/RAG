@@ -1,11 +1,9 @@
 Setup:
 1. download python, uv,
 2. Gather data —> uv run download.py 
-- Hallucination
-- Reasoning Error
-- Data bias 
-- overgeneralization
-- retrieval failure 
+- Setup Supabase: 
+    - anon -> pushlisable key 
+    - url -> 
 
 
 3. Create todos.md and ai todos of what to do in app
@@ -35,4 +33,23 @@ Setup:
 - Componets for frontend 
 - API-design for backend 
 
-8. 
+8. Ingestion Chunking
+- uv add --dev docline (for parsing html files)
+- create scripts and use docling to convert html to markdowns
+- review documents and edit imperfections using docklane 
+- create vector embedding and input the document markdown chunks with docling chunker
+- run the ingestion, embeddings, or database uploads
+
+9. Retrival Pipeline = user query -> semantic search (hybrid search + agentic search)
+- implement hybrid search for agentic rag with ai-cookbook
+- Ask if key-word search help
+- Problem retrival pipeline and grounding validator 
+    - model’s citation IDs were unreliable
+    - the filing tables were poorly flattened during ingestion
+    - relevant data crossed chunk boundaries overlapped.
+
+
+10. FTS pipeline = extra meaningful keywords from prompt using nlk library for search words
+- use shadcn + research best user chat expierence practices 
+- use claude to preform gap analyze and fix design
+- fixed the blockers, bugs, filling in the gaps for the pipelines
