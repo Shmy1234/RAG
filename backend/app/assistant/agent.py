@@ -31,16 +31,14 @@ document_agent = Agent(
 
 
 def agent_usage_limits() -> UsageLimits:
-    return UsageLimits(request_limit=4, tool_calls_limit=6)
+    return UsageLimits(request_limit=6, tool_calls_limit=8)
 
 
 def prepare_retrieval_tool(
     ctx: RunContext[DocumentAgentDeps],
     tool_definition: ToolDefinition,
-) -> ToolDefinition | None:
-    if not ctx.deps.retrieval_completed:
-        return tool_definition
-    return None
+) -> ToolDefinition:
+    return tool_definition
 
 
 @document_agent.tool(prepare=prepare_retrieval_tool)

@@ -100,6 +100,7 @@ def test_document_agent_returns_typed_output_and_exposes_search_tool():
             "Find Services revenue",
             deps=deps,
             model=TestModel(
+                call_tools=[],
                 custom_output_args=expected,
             ),
         )
@@ -112,11 +113,11 @@ def test_document_agent_returns_typed_output_and_exposes_search_tool():
 def test_agent_usage_limits_are_small_and_bound_tool_calls():
     limits = agent_usage_limits()
 
-    assert limits.request_limit == 4
-    assert limits.tool_calls_limit == 6
+    assert limits.request_limit == 6
+    assert limits.tool_calls_limit == 8
 
 
-def test_retrieval_tools_are_hidden_after_initial_search():
+def test_retrieval_tools_remain_available_after_initial_search_for_deep_rag():
     deps = agent_deps(FakeRetriever())
     ctx = SimpleNamespace(deps=deps)
     tool_definition = object()
@@ -125,7 +126,7 @@ def test_retrieval_tools_are_hidden_after_initial_search():
 
     deps.retrieval_completed = True
 
-    assert prepare_retrieval_tool(ctx, tool_definition) is None
+    assert prepare_retrieval_tool(ctx, tool_definition) is tool_definition
 
 
 def test_agent_instructions_keep_structured_citations_out_of_answer_text():
@@ -135,6 +136,8 @@ def test_agent_instructions_keep_structured_citations_out_of_answer_text():
     assert "Cite only evidence ids returned by the tools" in instructions
     assert "Do not cite chunk ids" in instructions
     assert "Do not reread a chunk that already has an evidence candidate" in instructions
+    assert "multiple distinct searches" in instructions
+    assert "comparisons, multi-part synthesis, or missing context" in instructions
 
 
 def test_search_filings_caches_identical_searches():
@@ -151,6 +154,27 @@ def test_search_filings_caches_identical_searches():
     assert first[0].evidence_id in deps.evidence_candidates
     assert first[0].exact_quote == chunk().text
     assert retriever.filters == RetrievalFilters(tickers=("AAPL",))
+
+
+def test_search_filings_allows_distinct_follow_up_searches():
+    retriever = FakeRetriever()
+    deps = agent_deps(retriever)
+    ctx = SimpleNamespace(deps=deps)
+
+    asyncio.run(search_filings(ctx, "Services revenue"))
+    asyncio.run(search_filings(ctx, "Product revenue"))
+
+    assert retriever.retrieve_calls == 2
+
+
+def test_surrounding_chunks_remain_readable_after_search():
+    deps = agent_deps(FakeRetriever())
+    ctx = SimpleNamespace(deps=deps)
+    asyncio.run(search_filings(ctx, "Services revenue"))
+
+    result = asyncio.run(read_surrounding_chunks(ctx, chunk().chunk_id))
+
+    assert result
 
 
 def test_read_chunk_reuses_evidence_id_registered_by_search():
