@@ -1,69 +1,75 @@
-# Document Copilot
+# React + TypeScript + Vite
 
-An internal AI chatbot that lets analysts query a corpus of documents in plain English and get sourced, citable answers.
+This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
-## The client
+Currently, two official plugins are available:
 
-**Driftwood Capital** — fictional independent investment research firm. Their analysts spend half their week reading 10-Ks and 10-Qs before they can produce any original analysis. Document Copilot eats that intake work so they can skip straight to insight.
+- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
+- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
 
-Full brief: [docs/client-brief.md](docs/client-brief.md)
+## React Compiler
 
-## Stack
+The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
 
-| Layer              | Choice                                               |
-| ------------------ | ---------------------------------------------------- |
-| Backend            | Python + FastAPI                                     |
-| Frontend           | Vite + React SPA + TypeScript                        |
-| Database           | Supabase Postgres (users, chats, documents, chunks)  |
-| Migrations         | SQLAlchemy models + Alembic                          |
-| Retrieval          | Supabase `pgvector` + Postgres full-text search      |
-| Auth               | Supabase Auth (email only)                           |
-| Hosting            | Railway                                              |
-| LLM + embeddings   | OpenAI                                               |
+## Expanding the ESLint configuration
 
-## Repo layout
+If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
 
-```text
-document-copilot/
-├── AGENTS.md           # agent instructions (read first)
-├── README.md           # this file
-├── data/               # local corpus + download script (payloads gitignored)
-├── docs/
-│   └── client-brief.md # the client one-pager
-├── backend/            # FastAPI service
-└── frontend/           # React SPA (Vite)
+```js
+export default defineConfig([
+  globalIgnores(['dist']),
+  {
+    files: ['**/*.{ts,tsx}'],
+    extends: [
+      // Other configs...
+
+      // Remove tseslint.configs.recommended and replace with this
+      tseslint.configs.recommendedTypeChecked,
+      // Alternatively, use this for stricter rules
+      tseslint.configs.strictTypeChecked,
+      // Optionally, add this for stylistic rules
+      tseslint.configs.stylisticTypeChecked,
+
+      // Other configs...
+    ],
+    languageOptions: {
+      parserOptions: {
+        project: ['./tsconfig.node.json', './tsconfig.app.json'],
+        tsconfigRootDir: import.meta.dirname,
+      },
+      // other options...
+    },
+  },
+])
+
 ```
 
-## Prerequisites
+You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
 
-Install these before setting up `backend/` or `frontend/`:
+```js
+// eslint.config.js
+import reactX from 'eslint-plugin-react-x'
+import reactDom from 'eslint-plugin-react-dom'
 
-| Tool | Version | Used for | Install |
-| ---- | ------- | -------- | ------- |
-| [Python](https://www.python.org/downloads/) | 3.12+ | Backend runtime | OS package manager or python.org |
-| [uv](https://docs.astral.sh/uv/getting-started/installation/) | latest | Backend deps + `data/download.py` | `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
-| [Node.js](https://nodejs.org/) | 20+ (LTS) | Frontend toolchain | nodejs.org or `nvm install --lts` |
-| [pnpm](https://pnpm.io/installation) | latest | Frontend package manager | `corepack enable && corepack prepare pnpm@latest --activate` |
+export default defineConfig([
+  globalIgnores(['dist']),
+  {
+    files: ['**/*.{ts,tsx}'],
+    extends: [
+      // Other configs...
+      // Enable lint rules for React
+      reactX.configs['recommended-typescript'],
+      // Enable lint rules for React DOM
+      reactDom.configs.recommended,
+    ],
+    languageOptions: {
+      parserOptions: {
+        project: ['./tsconfig.node.json', './tsconfig.app.json'],
+        tsconfigRootDir: import.meta.dirname,
+      },
+      // other options...
+    },
+  },
+])
 
-You also need accounts/keys for external services once the app is wired up. Start with [docs/guides/supabase-setup.md](docs/guides/supabase-setup.md) (account + project), then create an [OpenAI API key](https://platform.openai.com/api-keys) when the LLM layer is wired up.
-
-## Running locally
-
-To be added during the build. Setup guides:
-
-- [Supabase](docs/guides/supabase-setup.md) — account, hosted project (dashboard or CLI)
-- [Backend](docs/guides/backend-setup.md)
-- [Frontend](docs/guides/frontend-setup.md)
-
-## Sample SEC data
-
-Use the standalone downloader to fetch a small local 10-K sample from SEC EDGAR.
-Edit the params at the top of `data/download.py`, especially `USER_AGENT`, then run:
-
-```bash
-uv run data/download.py
 ```
-
-By default this downloads the latest 5 10-K filings for AAPL, MSFT, NVDA, AMZN, and GOOGL into year folders under `data/downloads/` and writes a `manifest.json`.
-Downloaded files are gitignored; the `data/` folder itself stays in git for the script and notes.
-# RAG

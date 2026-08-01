@@ -1,41 +1,24 @@
-# Environments / secrets
-.env
-.env.*
-!.env.example
-
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-.venv/
-venv/
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-dist/
-build/
-*.egg-info/
-
-# Node / Next.js
-node_modules/
-.turbo/
-*.tsbuildinfo
+# Logs
+logs
+*.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+lerna-debug.log*
 
-# Data / artifacts (downloaded corpus files are large, never check in)
-/data/downloads/*
-!/data/downloads/.gitkeep
-*.parquet
+node_modules
+dist
+dist-ssr
+*.local
 
-# IDE / OS
-.vscode/
-.idea/
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
 .DS_Store
-Thumbs.db
-
-# Logs
-*.log
-logs/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

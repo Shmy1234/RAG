@@ -9,3 +9,24 @@ Setup:
 
 
 3. Create todos.md and ai todos of what to do in app
+- phases and checklists 
+
+4. Phase 1: backend scalfold & database 
+- [uv sync] gives virtual environment
+- uv add pytest ruff 
+- uv add --dev ipykernel
+- main.py: create health endpoint and backend endpoint (uv run uvicorn app.main:app --reload to run app)
+- create our database models 
+- setup migrations, run m (uv run alembic upgrade head), check status of m (uv run alembic current  uv run alembic history)
+- backend scalfold and setup enviornment variables 
+
+5. Phase 2: frontend 
+- pnpm create vite . --template react-ts
+- pnpm add react-router-dom @supabase/supabase-js
+- pnpm add -D tailwindcss @tailwindcss/vite (setup tailwind imports with AI-help)
+- pnpm dlx shadcn@latest init
+- Setup frontend scalfold and setup enviornment variables 
+
+6. Authenication 
+- Supabsae check email options and setup url confirguration 
+- setup signup pages 
