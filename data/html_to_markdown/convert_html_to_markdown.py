@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -39,7 +41,39 @@ def normalize_markdown(markdown: str) -> str:
     return SEC_ITEM_HEADING.sub(r"## \1", markdown).rstrip() + "\n"
 
 
-def rewrite_manifest(input_root: Path, output_root: Path) -> dict[str, Any] | None:
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as file:
+        for block in iter(lambda: file.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def write_text_atomic(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            delete=False,
+        ) as temporary:
+            temporary.write(content)
+            temporary_path = Path(temporary.name)
+        temporary_path.replace(path)
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+
+
+def rewrite_manifest(
+    input_root: Path,
+    output_root: Path,
+    *,
+    verified_outputs: set[Path] | None = None,
+) -> dict[str, Any] | None:
     source_manifest_path = input_root / "manifest.json"
     if not source_manifest_path.exists():
         return None
@@ -58,16 +92,18 @@ def rewrite_manifest(input_root: Path, output_root: Path) -> dict[str, Any] | No
 
         source_path = input_root / relative_path
         markdown_path = markdown_path_for(source_path, input_root, output_root)
+        if verified_outputs is not None and markdown_path not in verified_outputs:
+            raise FileNotFoundError(
+                f"Manifest output was not verified in the current conversion run: {markdown_path}"
+            )
         if not markdown_path.is_file():
             raise FileNotFoundError(f"Manifest references missing Markdown output: {markdown_path}")
         filing["source_local_path"] = Path(local_path).as_posix()
         filing["local_path"] = markdown_path.relative_to(output_root).as_posix()
+        filing["source_sha256"] = sha256_file(source_path)
+        filing["markdown_sha256"] = sha256_file(markdown_path)
 
-    output_root.mkdir(parents=True, exist_ok=True)
-    (output_root / "manifest.json").write_text(
-        json.dumps(manifest, indent=2) + "\n",
-        encoding="utf-8",
-    )
+    write_text_atomic(output_root / "manifest.json", json.dumps(manifest, indent=2) + "\n")
     return manifest
 
 
@@ -78,11 +114,13 @@ def convert_html_files(input_root: Path, output_root: Path, overwrite: bool) -> 
     converted = 0
     failed = 0
     skipped = 0
+    verified_outputs: set[Path] = set()
 
     for source_path in find_html_files(input_root):
         output_path = markdown_path_for(source_path, input_root, output_root)
         if output_path.exists() and not overwrite:
             skipped += 1
+            verified_outputs.add(output_path)
             continue
 
         try:
@@ -93,12 +131,13 @@ def convert_html_files(input_root: Path, output_root: Path, overwrite: bool) -> 
             print(f"FAILED {source_path}: {exc}")
             continue
 
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_text(markdown, encoding="utf-8")
+        write_text_atomic(output_path, markdown)
+        verified_outputs.add(output_path)
         converted += 1
         print(f"WROTE {output_path}")
 
-    rewrite_manifest(input_root, output_root)
+    if failed == 0:
+        rewrite_manifest(input_root, output_root, verified_outputs=verified_outputs)
     return ConversionSummary(converted=converted, failed=failed, skipped=skipped)
 
 

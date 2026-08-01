@@ -15,16 +15,21 @@ _CLAIM_STOP_WORDS = {
     "apple",
     "billion",
     "company",
+    "compared",
+    "decreased",
     "filing",
     "fiscal",
+    "increased",
     "latest",
     "million",
     "reported",
+    "reached",
     "revenue",
     "total",
     "year",
     "years",
 }
+_SENTENCE_BOUNDARY_PATTERN = re.compile(r"(?<=[.!?])\s+(?=[A-Z])")
 
 
 class GroundingError(ValueError):
@@ -92,14 +97,8 @@ class GroundingValidator:
                 raise GroundingError("citation refers to evidence that was not registered for this run")
             selected.append(evidence)
 
-        selected_ids = {evidence.evidence_id for evidence in selected}
-        pool = selected + [
-            evidence
-            for evidence in evidence_candidates.values()
-            if evidence.evidence_id not in selected_ids
-        ]
         relevant: list[EvidenceCandidate] = []
-        for evidence in pool:
+        for evidence in selected:
             chunk = chunks.get(evidence.chunk_id)
             if chunk is None:
                 continue
@@ -110,6 +109,8 @@ class GroundingValidator:
             except GroundingError:
                 continue
             relevant.append(evidence)
+
+        self._validate_claims(answer.answer, relevant)
 
         required_numbers = self._financial_numbers(answer.answer)
         chosen = self._choose_evidence(relevant, required_numbers)
@@ -142,6 +143,28 @@ class GroundingValidator:
             citations=citations,
             cited_passages=self._passages_for_chunks(passages, cited_chunks),
         )
+
+    @classmethod
+    def _validate_claims(
+        cls,
+        answer: str,
+        evidence: Sequence[EvidenceCandidate],
+    ) -> None:
+        quotes = [item.exact_quote for item in evidence]
+        for raw_claim in _SENTENCE_BOUNDARY_PATTERN.split(answer):
+            claim = raw_claim.strip()
+            if not claim:
+                continue
+            for quote in quotes:
+                try:
+                    cls._validate_keyword_support(claim, quote)
+                except GroundingError:
+                    continue
+                break
+            else:
+                raise GroundingError("selected evidence does not support claim keywords")
+            cls._validate_financial_numbers(claim, quotes)
+            cls._validate_financial_number_order(claim, quotes)
 
     @classmethod
     def _choose_evidence(

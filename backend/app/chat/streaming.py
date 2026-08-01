@@ -2,11 +2,14 @@ import asyncio
 import json
 from collections.abc import AsyncIterator, Awaitable, Callable
 
+import structlog
+
 from app.assistant.outputs import GroundedAnswer
 from app.chat.stages import ErrorCode, RetrievalError, Stage
 from app.grounding.validator import GroundingError
 
 TurnRunner = Callable[[Callable[[Stage], Awaitable[None]]], Awaitable[GroundedAnswer]]
+logger = structlog.get_logger(__name__)
 
 
 async def stream_grounded_answer(
@@ -37,10 +40,16 @@ async def stream_chat_turn(
         raise ValueError("chunk_size must be greater than zero")
 
     queue: asyncio.Queue[Stage | None] = asyncio.Queue()
+    current_stage: Stage | None = None
+
+    async def report_stage(stage: Stage) -> None:
+        nonlocal current_stage
+        current_stage = stage
+        await queue.put(stage)
 
     async def runner() -> GroundedAnswer:
         try:
-            return await run_turn(queue.put)
+            return await run_turn(report_stage)
         finally:
             await queue.put(None)
 
@@ -58,13 +67,16 @@ async def stream_chat_turn(
         answer = await task
     except RetrievalError:
         code = "retrieval_failed"
+        logger.exception("chat_turn_failed", error_code=code, stage=current_stage)
     except GroundingError:
         code = "grounding_failed"
-    except Exception:  # noqa: BLE001 - fail closed: the stream is already open, so
+        logger.exception("chat_turn_failed", error_code=code, stage=current_stage)
+    except Exception:  # Fail closed: the stream is already open, so
         # every remaining failure must become a typed code rather than a dropped
         # connection. Covers usage limits, agent errors, and persistence alike;
         # the traceback stays server-side.
         code = "processing_failed"
+        logger.exception("chat_turn_failed", error_code=code, stage=current_stage)
     else:
         async for event in _answer_events(answer, chunk_size):
             yield event

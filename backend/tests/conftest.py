@@ -10,5 +10,6 @@ TEST_ENVIRONMENT = {
     "ALLOWED_ORIGINS": "http://localhost:5173",
 }
 
-for name, value in TEST_ENVIRONMENT.items():
-    os.environ.setdefault(name, value)
+if os.environ.get("RUN_RETRIEVAL_INTEGRATION") != "1":
+    for name, value in TEST_ENVIRONMENT.items():
+        os.environ.setdefault(name, value)

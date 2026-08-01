@@ -49,6 +49,7 @@ class StreamChatRequest(BaseModel):
 
 class CitationSourceResponse(BaseModel):
     chunk_id: UUID
+    chunk_index: int
     citation_index: int
     quoted_text: str
     chunk_text: str
@@ -60,3 +61,13 @@ class CitationSourceResponse(BaseModel):
     source_url: str
     citation_label: str
     location_label: str
+    previous_chunks: list["CitationChunkResponse"] = Field(default_factory=list)
+    next_chunks: list["CitationChunkResponse"] = Field(default_factory=list)
+
+
+class CitationChunkResponse(BaseModel):
+    chunk_id: UUID
+    chunk_index: int
+    text: str
+    page_number: int | None
+    section: str | None

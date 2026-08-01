@@ -48,9 +48,9 @@ Goal: a running FastAPI service with a migrated Supabase schema.
   - [x] Generated `tsvector` column on chunks
   - [x] HNSW index (vector) + GIN index (full-text)
   - [x] RLS policies (users see only their own chats)
-- [ ] Run `uv run alembic upgrade head` against the replacement Supabase direct connection
+- [x] Run `uv run alembic upgrade head` against the replacement Supabase direct connection
 - [x] `app/database/supabase.py` — user-scoped and service-role clients
-- [ ] Verify against the replacement environment: `uv run uvicorn app.main:app --reload` → health check returns 200
+- [x] Verify against the replacement environment: `uv run uvicorn app.main:app --reload` → health check returns 200
 
 ## Phase 2 — Auth (full stack)
 
@@ -115,7 +115,7 @@ Goal: a user question returns ranked, relevant source passages.
 - [x] `retrieval/fusion.py` — Reciprocal Rank Fusion in Python
 - [x] `retrieval/retriever.py` — query → fused ranked passages + neighbor chunks
 - [x] Unit tests: fusion ranking, query assembly (mock DB)
-- [ ] Integration test (optional, `@pytest.mark.integration`): real query against ingested corpus
+- [x] Integration test (optional, `@pytest.mark.integration`): real query against ingested corpus
 - [x] Verify: test queries from client-brief return relevant chunks (manual or scripted)
 
 ## Phase 6 — LLM agent & grounding
@@ -168,7 +168,7 @@ Goal: 5 senior analysts can use it for a week and report ≥3 hours saved per an
 - [ ] Smoke-test all 10 example questions from the client brief
 - [ ] Confirm chat history persists across sessions
 - [ ] Confirm ~40-user scale assumptions (no hardcoded single-user shortcuts)
-- [ ] Basic structured logging on backend (`structlog`) for debugging failed turns
+- [x] Basic structured logging on backend (`structlog`) for debugging failed turns
 - [ ] Review latency: streaming starts within a few seconds for typical queries
 
 ## Phase 9 — Deployment (Railway)

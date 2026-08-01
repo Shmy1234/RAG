@@ -1,4 +1,7 @@
 from datetime import date
+from hashlib import sha256
+
+import pytest
 
 from ingest.manifest import load_manifest
 
@@ -56,3 +59,22 @@ def test_load_manifest_rejects_missing_markdown_file(tmp_path):
         assert "2025/aapl.md" in str(exc)
     else:
         raise AssertionError("expected FileNotFoundError")
+
+
+def test_load_manifest_rejects_markdown_hash_mismatch(tmp_path):
+    root = tmp_path / "Markdown"
+    root.mkdir()
+    markdown = root / "aapl.md"
+    markdown.write_text("# changed filing\n", encoding="utf-8")
+    expected_hash = sha256(b"# original filing\n").hexdigest()
+    (root / "manifest.json").write_text(
+        '{"filings": [{"ticker": "AAPL", "form": "10-K", '
+        '"filing_date": "2025-10-31", "report_date": "2025-09-27", '
+        '"accession_number": "0000320193-25-000079", '
+        '"source_url": "https://www.sec.gov/example", "local_path": "aapl.md", '
+        f'"markdown_sha256": "{expected_hash}"}}]}}',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="hash does not match"):
+        load_manifest(root)

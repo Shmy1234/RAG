@@ -102,56 +102,43 @@ class ChatStore:
         content: str,
         message_data: dict[str, object],
     ) -> dict[str, object]:
-        existing = await asyncio.to_thread(
-            lambda: (
-                self.client.table("chat_messages")
-                .select("position")
-                .eq("thread_id", str(thread_id))
-                .order("position", desc=True)
-                .limit(1)
-                .execute()
-            )
-        )
-        next_position = 0
-        if existing.data:
-            next_position = int(existing.data[0]["position"]) + 1
         response = await asyncio.to_thread(
             lambda: (
-                self.client.table("chat_messages")
-                .insert(
+                self.client.rpc(
+                    "append_chat_message_atomic",
                     {
-                        "thread_id": str(thread_id),
-                        "position": next_position,
-                        "role": role,
-                        "content": content,
-                        "message_data": message_data,
-                    }
+                        "p_thread_id": str(thread_id),
+                        "p_role": role,
+                        "p_content": content,
+                        "p_message_data": message_data,
+                    },
                 )
                 .execute()
             )
         )
         return dict(response.data[0])
 
-    async def append_citations(
+    async def append_grounded_answer(
         self,
-        message_id: str,
+        thread_id: UUID,
+        content: str,
+        message_data: dict[str, object],
         citations: list[dict[str, object]],
-    ) -> None:
-        if not citations:
-            return
-
-        def insert_rows() -> None:
-            for citation in citations:
-                self.client.table("message_citations").insert(
+    ) -> dict[str, object]:
+        response = await asyncio.to_thread(
+            lambda: (
+                self.client.rpc(
+                    "append_grounded_answer_atomic",
                     {
-                        "message_id": message_id,
-                        "chunk_id": str(citation["chunk_id"]),
-                        "citation_index": int(citation["citation_index"]),
-                        "quoted_text": str(citation["quoted_text"]),
-                    }
+                        "p_thread_id": str(thread_id),
+                        "p_content": content,
+                        "p_message_data": message_data,
+                        "p_citations": citations,
+                    },
                 ).execute()
-
-        await asyncio.to_thread(insert_rows)
+            )
+        )
+        return dict(response.data[0])
 
     async def get_citation_source(
         self,
@@ -165,7 +152,7 @@ class ChatStore:
                 .select(
                     "citation_index,quoted_text,chunk_id,"
                     "chat_messages!inner(id,thread_id,chat_threads!inner(user_id)),"
-                    "document_chunks!inner(text,page_number,section,source_documents!inner("
+                    "document_chunks!inner(id,document_id,chunk_index,text,page_number,section,source_documents!inner("
                     "ticker,company_name,filing_type,filing_date,source_url))"
                 )
                 .eq("message_id", str(message_id))
@@ -176,4 +163,27 @@ class ChatStore:
             )
         )
         rows = response.data or []
-        return dict(rows[0]) if rows else None
+        if not rows:
+            return None
+
+        row = dict(rows[0])
+        chunk = row["document_chunks"]
+        neighbors = await asyncio.to_thread(
+            lambda: (
+                self.client.table("document_chunks")
+                .select("id,chunk_index,text,page_number,section")
+                .eq("document_id", chunk["document_id"])
+                .gte("chunk_index", max(0, chunk["chunk_index"] - 1))
+                .lte("chunk_index", chunk["chunk_index"] + 1)
+                .neq("id", chunk["id"])
+                .order("chunk_index")
+                .execute()
+            )
+        )
+        row["previous_chunks"] = [
+            item for item in (neighbors.data or []) if item["chunk_index"] < chunk["chunk_index"]
+        ]
+        row["next_chunks"] = [
+            item for item in (neighbors.data or []) if item["chunk_index"] > chunk["chunk_index"]
+        ]
+        return row

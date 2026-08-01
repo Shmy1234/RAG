@@ -130,6 +130,7 @@ async def get_citation_source(
         location_parts.append(section)
     return {
         "chunk_id": row["chunk_id"],
+        "chunk_index": chunk["chunk_index"],
         "citation_index": row["citation_index"],
         "quoted_text": row["quoted_text"],
         "chunk_text": chunk["text"],
@@ -141,6 +142,8 @@ async def get_citation_source(
         "source_url": document["source_url"],
         "citation_label": f"{document['ticker']} {document['filing_type']}",
         "location_label": ", ".join(location_parts) or "unknown location",
+        "previous_chunks": row["previous_chunks"],
+        "next_chunks": row["next_chunks"],
     }
 
 
@@ -148,12 +151,15 @@ def latest_user_text(messages: list[UIMessage]) -> str:
     for message in reversed(messages):
         if message.role != "user":
             continue
-        if message.content:
+        if message.content and message.content.strip():
             return message.content
         part_text = "".join(part.text or "" for part in message.parts if part.type == "text")
-        if part_text:
+        if part_text.strip():
             return part_text
-    return ""
+    raise HTTPException(
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        detail="A non-blank user message is required",
+    )
 
 
 @router.post("/stream")

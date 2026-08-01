@@ -354,7 +354,7 @@ def test_validator_rejects_evidence_id_not_registered_for_run():
         GroundingValidator().validate(answer, [passage()], evidence_candidates={})
 
 
-def test_validator_selects_registered_evidence_when_model_selects_wrong_candidate():
+def test_validator_rejects_wrong_selected_evidence_even_when_support_exists_in_pool():
     supported_source = passage().model_copy(
         update={
             "center": passage().center.model_copy(
@@ -387,13 +387,31 @@ def test_validator_selects_registered_evidence_when_model_selects_wrong_candidat
         citations=[CitationDraft(evidence_id=wrong.evidence_id)],
     )
 
-    result = GroundingValidator().validate(
-        answer,
-        [wrong_source, supported_source],
-        evidence_candidates={wrong.evidence_id: wrong, supported.evidence_id: supported},
+    with pytest.raises(GroundingError, match="support"):
+        GroundingValidator().validate(
+            answer,
+            [wrong_source, supported_source],
+            evidence_candidates={wrong.evidence_id: wrong, supported.evidence_id: supported},
+        )
+
+
+def test_validator_rejects_answer_with_one_supported_and_one_unsupported_claim():
+    source = passage()
+    evidence = evidence_candidate(source)
+    answer = AgentAnswer(
+        answer=(
+            "Services revenue increased 14% in fiscal 2025. "
+            "Wearables revenue increased 30% in fiscal 2025."
+        ),
+        citations=[CitationDraft(evidence_id=evidence.evidence_id)],
     )
 
-    assert [item.quoted_text for item in result.citations] == [supported.exact_quote]
+    with pytest.raises(GroundingError, match="claim"):
+        GroundingValidator().validate(
+            answer,
+            [source],
+            evidence_candidates={evidence.evidence_id: evidence},
+        )
 
 
 def evidence_candidate(source: SourcePassage) -> EvidenceCandidate:

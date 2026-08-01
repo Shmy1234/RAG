@@ -19,11 +19,13 @@ class ChatStoreLike(Protocol):
         message_data: dict[str, object],
     ) -> dict[str, object]: ...
 
-    async def append_citations(
+    async def append_grounded_answer(
         self,
-        message_id: str,
+        thread_id: UUID,
+        content: str,
+        message_data: dict[str, object],
         citations: list[dict[str, object]],
-    ) -> None: ...
+    ) -> dict[str, object]: ...
 
 
 class AgentRunner(Protocol):
@@ -71,11 +73,10 @@ async def run_chat_turn(
     )
     citation_data = [citation.model_dump(mode="json") for citation in validated.citations]
     await report_stage("saving")
-    assistant_message = await store.append_message(
+    await store.append_grounded_answer(
         thread_id,
-        "assistant",
         validated.answer,
         {"phase": 6, "citations": citation_data},
+        citation_data,
     )
-    await store.append_citations(str(assistant_message["id"]), citation_data)
     return validated

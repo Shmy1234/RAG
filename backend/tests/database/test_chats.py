@@ -67,10 +67,29 @@ class FakeQuery:
 class FakeClient:
     def __init__(self, tables: dict[str, list[dict[str, object]]]):
         self.tables = tables
+        self.rpc_calls: list[tuple[str, dict[str, object]]] = []
 
     def table(self, name: str):
         rows = self.tables.setdefault(name, [])
         return FakeQuery(rows, rows)
+
+    def rpc(self, name: str, params: dict[str, object]):
+        self.rpc_calls.append((name, params))
+        thread_id = str(params["p_thread_id"])
+        messages = self.tables.setdefault("chat_messages", [])
+        position = max(
+            (int(row["position"]) for row in messages if row["thread_id"] == thread_id),
+            default=-1,
+        ) + 1
+        message = {
+            "id": str(uuid4()),
+            "thread_id": thread_id,
+            "position": position,
+            "role": params.get("p_role", "assistant"),
+            "content": params["p_content"],
+            "message_data": params["p_message_data"],
+        }
+        return FakeQuery([], [message]).insert(message)
 
 
 @pytest.fixture
@@ -147,6 +166,7 @@ async def test_chat_store_appends_message_after_existing_position(ids) -> None:
 
     assert row["position"] == 2
     assert row["content"] == "Hello"
+    assert client.rpc_calls[0][0] == "append_chat_message_atomic"
 
 
 @pytest.mark.anyio
@@ -158,20 +178,33 @@ async def test_chat_store_raises_not_found_for_unknown_thread(ids) -> None:
 
 
 @pytest.mark.anyio
-async def test_chat_store_persists_message_citations(ids) -> None:
+async def test_chat_store_persists_grounded_answer_with_one_atomic_rpc(ids) -> None:
     _user_id, _other_user_id, thread_id = ids
-    client = FakeClient({"message_citations": []})
+    client = FakeClient({"chat_messages": [], "message_citations": []})
+    citations = [
+        {
+            "chunk_id": str(uuid4()),
+            "citation_index": 0,
+            "quoted_text": "Services revenue increased.",
+        }
+    ]
 
-    await ChatStore(client).append_citations(
-        str(thread_id),
-        [
-            {
-                "chunk_id": str(uuid4()),
-                "citation_index": 0,
-                "quoted_text": "Services revenue increased.",
-            }
-        ],
+    row = await ChatStore(client).append_grounded_answer(
+        thread_id,
+        "Services revenue increased.",
+        {"phase": 6, "citations": citations},
+        citations,
     )
 
-    assert client.tables["message_citations"][0]["message_id"] == str(thread_id)
-    assert client.tables["message_citations"][0]["citation_index"] == 0
+    assert row["role"] == "assistant"
+    assert client.rpc_calls == [
+        (
+            "append_grounded_answer_atomic",
+            {
+                "p_thread_id": str(thread_id),
+                "p_content": "Services revenue increased.",
+                "p_message_data": {"phase": 6, "citations": citations},
+                "p_citations": citations,
+            },
+        )
+    ]

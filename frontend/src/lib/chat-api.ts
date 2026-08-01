@@ -26,6 +26,7 @@ export type Citation = {
 }
 
 export type CitationSource = Citation & {
+  chunk_index: number
   chunk_text: string
   company_name: string
   filing_type: string
@@ -33,6 +34,16 @@ export type CitationSource = Citation & {
   page_number: number | null
   section: string | null
   source_url: string
+  previous_chunks: CitationChunk[]
+  next_chunks: CitationChunk[]
+}
+
+export type CitationChunk = {
+  chunk_id: string
+  chunk_index: number
+  text: string
+  page_number: number | null
+  section: string | null
 }
 
 /** Stage identifiers streamed by the backend. Copy is owned by the frontend. */

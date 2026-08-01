@@ -3,6 +3,7 @@
 import json
 from dataclasses import dataclass
 from datetime import date
+from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
@@ -40,6 +41,11 @@ def load_manifest(markdown_root: Path) -> list[IngestDocument]:
         markdown_path = markdown_root / relative_path
         if not markdown_path.is_file():
             raise FileNotFoundError(f"Markdown file listed in manifest does not exist: {relative_path}")
+        expected_hash = filing.get("markdown_sha256")
+        if expected_hash is not None:
+            actual_hash = sha256(markdown_path.read_bytes()).hexdigest()
+            if actual_hash != expected_hash:
+                raise ValueError(f"Markdown hash does not match manifest: {relative_path}")
 
         report_date = date.fromisoformat(filing["report_date"])
         documents.append(

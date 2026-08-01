@@ -93,3 +93,26 @@ def test_stream_chat_turn_never_leaks_exception_text():
     assert '"code": "processing_failed"' in body
     assert secret not in body
     assert "RuntimeError" not in body
+
+
+def test_stream_chat_turn_logs_unexpected_failure_with_traceback(monkeypatch):
+    logged = []
+
+    class FakeLogger:
+        def exception(self, event, **context):
+            logged.append((event, context))
+
+    monkeypatch.setattr("app.chat.streaming.logger", FakeLogger())
+
+    async def run_turn(on_stage):
+        await on_stage("searching")
+        raise RuntimeError("database unavailable")
+
+    collect_turn(run_turn)
+
+    assert logged == [
+        (
+            "chat_turn_failed",
+            {"error_code": "processing_failed", "stage": "searching"},
+        )
+    ]

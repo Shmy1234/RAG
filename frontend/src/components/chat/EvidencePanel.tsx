@@ -1,5 +1,7 @@
 import { ExternalLink, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 
 import { QuoteHighlight } from '@/components/chat/QuoteHighlight'
 import { describeError, type ErrorDescription } from '@/components/chat/chat-errors'
@@ -9,7 +11,7 @@ import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useIsMobile } from '@/hooks/use-mobile'
-import { chatApi, type CitationSource } from '@/lib/chat-api'
+import { chatApi, type CitationChunk, type CitationSource } from '@/lib/chat-api'
 
 export type SelectedCitation = {
   messageId: string
@@ -109,6 +111,29 @@ function EvidencePanelBody({ selection, onClose }: EvidencePanelProps) {
               </p>
               <QuoteHighlight chunkText={source.chunk_text} quotedText={source.quoted_text} />
             </div>
+            <div>
+              <p className="mb-1.5 font-mono text-[0.6875rem] tracking-tight text-muted-foreground">
+                NEIGHBORING CHUNKS
+              </p>
+              <div className="space-y-3">
+                {source.previous_chunks.map((chunk) => (
+                  <ContextChunk chunk={chunk} key={chunk.chunk_id} label="Previous chunk" />
+                ))}
+                <ContextChunk
+                  chunk={{
+                    chunk_id: source.chunk_id,
+                    chunk_index: source.chunk_index,
+                    text: source.chunk_text,
+                    page_number: source.page_number,
+                    section: source.section,
+                  }}
+                  label="Cited chunk"
+                />
+                {source.next_chunks.map((chunk) => (
+                  <ContextChunk chunk={chunk} key={chunk.chunk_id} label="Next chunk" />
+                ))}
+              </div>
+            </div>
             {source.source_url ? (
               <a
                 className="inline-flex items-center gap-1.5 text-muted-foreground underline underline-offset-2 hover:text-foreground"
@@ -124,6 +149,17 @@ function EvidencePanelBody({ selection, onClose }: EvidencePanelProps) {
         )}
       </div>
     </>
+  )
+}
+
+function ContextChunk({ chunk, label }: { chunk: CitationChunk; label: string }) {
+  return (
+    <div className="rounded-md border bg-background/60 p-3">
+      <p className="mb-2 font-mono text-[0.625rem] tracking-tight text-muted-foreground">{label}</p>
+      <div className="max-w-none break-words text-sm leading-relaxed [&_table]:block [&_table]:w-full [&_table]:overflow-x-auto [&_table]:text-left [&_th]:border [&_th]:border-border [&_th]:bg-muted [&_th]:px-2 [&_th]:py-1 [&_td]:border [&_td]:border-border [&_td]:px-2 [&_td]:py-1">
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>{chunk.text}</ReactMarkdown>
+      </div>
+    </div>
   )
 }
 

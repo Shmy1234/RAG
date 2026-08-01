@@ -43,14 +43,24 @@ class FakeStore:
     def __init__(self):
         self.messages = []
         self.citations = []
+        self.grounded_calls = []
 
     async def append_message(self, thread_id, role, content, message_data):
         message = {"id": str(uuid4()), "role": role, "content": content, "message_data": message_data}
         self.messages.append(message)
         return message
 
-    async def append_citations(self, message_id, citations):
+    async def append_grounded_answer(self, thread_id, content, message_data, citations):
+        self.grounded_calls.append((thread_id, content, message_data, citations))
+        message = {
+            "id": str(uuid4()),
+            "role": "assistant",
+            "content": content,
+            "message_data": message_data,
+        }
+        self.messages.append(message)
         self.citations.extend(citations)
+        return message
 
 
 def grounded_answer() -> GroundedAnswer:
@@ -113,6 +123,7 @@ def test_run_chat_turn_persists_only_validated_answer_and_citations():
     assert result.answer == "Services revenue increased."
     assert [message["role"] for message in store.messages] == ["user", "assistant"]
     assert len(store.citations) == 1
+    assert len(store.grounded_calls) == 1
     assert store.citations[0]["citation_index"] == 0
     assert retriever.retrieve_calls == 1
     assert agent.usage_limits.request_limit == 4

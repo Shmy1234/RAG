@@ -58,7 +58,30 @@ def test_rewrite_manifest_preserves_metadata_and_repoints_local_paths(tmp_path):
     assert manifest["filings"][0]["local_path"] == (
         "2025/aapl_10-k_2025-10-31_accession.md"
     )
+    assert len(manifest["filings"][0]["source_sha256"]) == 64
+    assert len(manifest["filings"][0]["markdown_sha256"]) == 64
     assert (output_root / "manifest.json").read_text(encoding="utf-8").endswith("\n")
+
+
+def test_rewrite_manifest_rejects_stale_output_after_current_conversion_failure(tmp_path):
+    input_root = tmp_path / "downloads"
+    output_root = tmp_path / "Markdown"
+    input_root.mkdir()
+    source_path = input_root / "2025" / "aapl.htm"
+    source_path.parent.mkdir()
+    source_path.write_text("<html>new filing</html>", encoding="utf-8")
+    markdown_path = output_root / "2025" / "aapl.md"
+    markdown_path.parent.mkdir(parents=True)
+    markdown_path.write_text("# stale filing\n", encoding="utf-8")
+    (input_root / "manifest.json").write_text(
+        json.dumps({"filings": [{"ticker": "AAPL", "local_path": "2025/aapl.htm"}]}),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(FileNotFoundError, match="current conversion run"):
+        rewrite_manifest(input_root, output_root, verified_outputs=set())
+
+    assert not (output_root / "manifest.json").exists()
 
 
 def test_rewrite_manifest_refuses_to_publish_missing_markdown_output(tmp_path):

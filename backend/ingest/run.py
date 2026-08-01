@@ -1,6 +1,7 @@
 """Command-line entrypoint for Markdown filing ingestion."""
 
 import argparse
+from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -24,6 +25,46 @@ class PreparedDocument:
     document: IngestDocument
     content: str
     chunks: list[ChunkRecord]
+
+
+@dataclass(frozen=True)
+class CorpusValidationReport:
+    document_count: int
+    chunk_count: int
+    duplicate_chunk_count: int
+    chunks_without_page: int
+    chunks_without_section: int
+
+
+def validate_prepared_documents(
+    prepared: Sequence[PreparedDocument],
+) -> CorpusValidationReport:
+    if not prepared:
+        raise ValueError("ingestion manifest contains no documents")
+
+    chunks_without_page = 0
+    chunks_without_section = 0
+    chunk_count = 0
+    duplicate_chunk_count = 0
+    for item in prepared:
+        if not item.chunks:
+            raise ValueError(f"document produced no chunks: {item.document.markdown_path}")
+        normalized_texts = [" ".join(chunk.text.split()) for chunk in item.chunks]
+        if any(not text for text in normalized_texts):
+            raise ValueError(f"document contains empty chunk text: {item.document.markdown_path}")
+        duplicates = [text for text, count in Counter(normalized_texts).items() if count > 1]
+        duplicate_chunk_count += sum(normalized_texts.count(text) - 1 for text in duplicates)
+        chunk_count += len(item.chunks)
+        chunks_without_page += sum(chunk.page_number is None for chunk in item.chunks)
+        chunks_without_section += sum(not chunk.section for chunk in item.chunks)
+
+    return CorpusValidationReport(
+        document_count=len(prepared),
+        chunk_count=chunk_count,
+        duplicate_chunk_count=duplicate_chunk_count,
+        chunks_without_page=chunks_without_page,
+        chunks_without_section=chunks_without_section,
+    )
 
 
 def _positive_int(value: str) -> int:
@@ -139,7 +180,14 @@ def _upload_documents(prepared: list[PreparedDocument], args: argparse.Namespace
 
 def run_pipeline(args: argparse.Namespace) -> int:
     prepared = _prepare_documents(args)
+    quality = validate_prepared_documents(prepared)
     _print_summary(prepared, "dry-run" if args.dry_run else "upload")
+    print(
+        f"corpus_validation documents={quality.document_count} chunks={quality.chunk_count} "
+        f"duplicate_chunks={quality.duplicate_chunk_count} "
+        f"chunks_without_page={quality.chunks_without_page} "
+        f"chunks_without_section={quality.chunks_without_section}"
+    )
 
     if args.dry_run:
         return 0

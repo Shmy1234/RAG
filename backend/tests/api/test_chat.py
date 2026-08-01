@@ -82,8 +82,8 @@ class MemoryChatStore:
         self.messages.append(message)
         return message
 
-    async def append_citations(self, message_id: str, citations):
-        return None
+    async def append_grounded_answer(self, thread_id, content, message_data, citations):
+        return await self.append_message(thread_id, "assistant", content, message_data)
 
 
 class FakeRetriever:
@@ -167,6 +167,42 @@ async def test_stream_persists_messages_and_returns_stub(user, store):
     assert '"type": "text-delta"' in response.text
     assert '"type": "finish"' in response.text
     assert [message["role"] for message in store.messages] == ["user", "assistant"]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "messages",
+    [
+        [],
+        [{"role": "assistant", "content": "Previous answer"}],
+        [{"role": "user", "content": "   "}],
+        [{"role": "user", "parts": [{"type": "text", "text": "\n\t"}]}],
+    ],
+)
+async def test_stream_rejects_missing_or_blank_user_text_before_orchestration(
+    user,
+    store,
+    messages,
+):
+    async def override_user():
+        return user
+
+    app.dependency_overrides[get_current_user] = override_user
+    app.dependency_overrides[get_chat_store] = lambda: store
+    app.dependency_overrides[get_document_retriever] = lambda: FakeRetriever()
+    app.dependency_overrides[get_agent_runner] = lambda: FakeAgent()
+    app.dependency_overrides[get_grounding_validator] = lambda: FakeGroundingValidator()
+    await store.create_thread(user.id, "Apple revenue mix")
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/chat/stream",
+            json={"threadId": str(store.thread_id), "messages": messages},
+        )
+
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+    assert response.json() == {"detail": "A non-blank user message is required"}
+    assert store.messages == []
 
 
 @pytest.mark.anyio

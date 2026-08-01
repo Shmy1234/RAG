@@ -1,0 +1,17 @@
+[
+  {
+    "query": "How did Apple's Services revenue change?",
+    "ticker": "AAPL",
+    "keywords": ["services", "revenue"]
+  },
+  {
+    "query": "What did Amazon report about AWS operating income?",
+    "ticker": "AMZN",
+    "keywords": ["aws", "operating income"]
+  },
+  {
+    "query": "What demand drivers did NVIDIA describe for Data Center?",
+    "ticker": "NVDA",
+    "keywords": ["data center", "demand"]
+  }
+]
