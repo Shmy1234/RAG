@@ -102,15 +102,25 @@ def rewrite_manifest(
         filing["local_path"] = markdown_path.relative_to(output_root).as_posix()
         filing["source_sha256"] = sha256_file(source_path)
         filing["markdown_sha256"] = sha256_file(markdown_path)
+        structured_root = output_root.parent / "Structured"
+        structured_path = structured_root / relative_path.with_suffix(".json")
+        if not structured_path.is_file():
+            raise FileNotFoundError(
+                f"Manifest references missing structured output: {structured_path}"
+            )
+        filing["structured_local_path"] = structured_path.relative_to(structured_root).as_posix()
+        filing["structured_sha256"] = sha256_file(structured_path)
+        filing["extraction_version"] = "sec-html-v1"
 
     write_text_atomic(output_root / "manifest.json", json.dumps(manifest, indent=2) + "\n")
     return manifest
 
 
 def convert_html_files(input_root: Path, output_root: Path, overwrite: bool) -> ConversionSummary:
-    from docling.document_converter import DocumentConverter
+    from ingest.sec_html import extract_sec_html
+    from ingest.serialization import export_to_markdown, extracted_document_dict
 
-    converter = DocumentConverter()
+    structured_root = output_root.parent / "Structured"
     converted = 0
     failed = 0
     skipped = 0
@@ -118,20 +128,23 @@ def convert_html_files(input_root: Path, output_root: Path, overwrite: bool) -> 
 
     for source_path in find_html_files(input_root):
         output_path = markdown_path_for(source_path, input_root, output_root)
-        if output_path.exists() and not overwrite:
+        structured_path = structured_root / source_path.relative_to(input_root).with_suffix(".json")
+        if output_path.exists() and structured_path.exists() and not overwrite:
             skipped += 1
             verified_outputs.add(output_path)
             continue
 
         try:
-            result = converter.convert(source_path)
-            markdown = normalize_markdown(result.document.export_to_markdown())
-        except Exception as exc:  # noqa: BLE001 - keep processing after Docling rejects one file.
+            document = extract_sec_html(source_path.read_bytes())
+            markdown = export_to_markdown(document)
+            structured = json.dumps(extracted_document_dict(document), indent=2) + "\n"
+        except Exception as exc:  # noqa: BLE001 - keep processing after one malformed filing.
             failed += 1
             print(f"FAILED {source_path}: {exc}")
             continue
 
         write_text_atomic(output_path, markdown)
+        write_text_atomic(structured_path, structured)
         verified_outputs.add(output_path)
         converted += 1
         print(f"WROTE {output_path}")
@@ -143,7 +156,7 @@ def convert_html_files(input_root: Path, output_root: Path, overwrite: bool) -> 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Convert data/downloads HTML filings to Markdown with Docling."
+        description="Convert SEC HTML filings to Markdown and canonical structured JSON."
     )
     parser.add_argument(
         "--input-dir",

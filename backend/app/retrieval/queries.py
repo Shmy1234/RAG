@@ -5,7 +5,7 @@ from uuid import UUID
 from sqlalchemy import Select, desc, func, select
 from sqlalchemy.orm import Session
 
-from app.database.models.documents import DocumentChunk, SourceDocument
+from app.database.models.documents import DocumentChunk, DocumentTable, SourceDocument
 from app.retrieval.normalization import normalize_full_text_query
 from app.retrieval.schemas import ChunkReference, RankedChunk, RetrievalFilters
 
@@ -18,6 +18,13 @@ def _base_columns():
         DocumentChunk.text,
         DocumentChunk.page_number,
         DocumentChunk.section,
+        DocumentChunk.kind,
+        DocumentChunk.table_id,
+        DocumentChunk.row_start,
+        DocumentChunk.row_end,
+        DocumentChunk.source_locator,
+        DocumentTable.title.label("table_title"),
+        DocumentTable.units.label("table_units"),
         SourceDocument.ticker,
         SourceDocument.company_name,
         SourceDocument.filing_type,
@@ -53,6 +60,13 @@ def chunk_reference_from_row(row) -> ChunkReference:
         fiscal_year=row.fiscal_year,
         accession_number=row.accession_number,
         source_url=row.source_url,
+        kind=row.kind,
+        table_id=row.table_id,
+        table_title=row.table_title,
+        table_units=row.table_units,
+        row_start=row.row_start,
+        row_end=row.row_end,
+        source_locator=row.source_locator or {},
     )
 
 
@@ -80,6 +94,7 @@ def build_semantic_statement(
     statement = (
         select(*_base_columns(), (1 - distance).label("score"))
         .join(SourceDocument, SourceDocument.id == DocumentChunk.document_id)
+        .outerjoin(DocumentTable, DocumentTable.id == DocumentChunk.table_id)
         .where(DocumentChunk.embedding.is_not(None))
         .order_by(distance)
         .limit(limit)
@@ -116,6 +131,7 @@ def build_full_text_statement(
     statement = (
         select(*_base_columns(), rank.label("score"))
         .join(SourceDocument, SourceDocument.id == DocumentChunk.document_id)
+        .outerjoin(DocumentTable, DocumentTable.id == DocumentChunk.table_id)
         .where(DocumentChunk.search_vector.op("@@")(ts_query))
         .order_by(desc(rank))
         .limit(limit)
@@ -146,6 +162,7 @@ def build_read_chunk_statement(chunk_id: UUID) -> Select:
     return (
         select(*_base_columns())
         .join(SourceDocument, SourceDocument.id == DocumentChunk.document_id)
+        .outerjoin(DocumentTable, DocumentTable.id == DocumentChunk.table_id)
         .where(DocumentChunk.id == chunk_id)
     )
 
@@ -166,12 +183,15 @@ def read_surrounding_chunks(
     statement = (
         select(*_base_columns())
         .join(SourceDocument, SourceDocument.id == DocumentChunk.document_id)
+        .outerjoin(DocumentTable, DocumentTable.id == DocumentChunk.table_id)
         .where(DocumentChunk.document_id == chunk.document_id)
         .where(DocumentChunk.chunk_index >= chunk.chunk_index - window)
         .where(DocumentChunk.chunk_index <= chunk.chunk_index + window)
         .where(DocumentChunk.id != chunk.chunk_id)
         .order_by(DocumentChunk.chunk_index)
     )
+    if chunk.table_id is not None:
+        statement = statement.where(DocumentChunk.table_id == chunk.table_id)
     neighbors = [chunk_reference_from_row(row) for row in session.execute(statement).all()]
     previous = [item for item in neighbors if item.chunk_index < chunk.chunk_index]
     next_chunks = [item for item in neighbors if item.chunk_index > chunk.chunk_index]

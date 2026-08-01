@@ -77,6 +77,7 @@ def _citation_chunk_response(chunk: dict[str, object]) -> dict[str, object]:
         "text": chunk["text"],
         "page_number": chunk.get("page_number"),
         "section": chunk.get("section"),
+        "kind": chunk.get("kind", "narrative"),
     }
 
 
@@ -145,6 +146,7 @@ async def get_citation_source(
     document = chunk["source_documents"]
     page_number = chunk.get("page_number")
     section = chunk.get("section")
+    table = chunk.get("document_tables") or {}
     location_parts = []
     if page_number is not None:
         location_parts.append(f"page {page_number}")
@@ -164,9 +166,13 @@ async def get_citation_source(
         "source_url": document["source_url"],
         "citation_label": f"{document['ticker']} {document['filing_type']}",
         "location_label": ", ".join(location_parts) or "unknown location",
-        "previous_chunks": [
-            _citation_chunk_response(item) for item in row["previous_chunks"]
-        ],
+        "kind": chunk.get("kind", "narrative"),
+        "table_title": table.get("title"),
+        "table_units": table.get("units"),
+        "row_start": chunk.get("row_start"),
+        "row_end": chunk.get("row_end"),
+        "source_locator": chunk.get("source_locator") or {},
+        "previous_chunks": [_citation_chunk_response(item) for item in row["previous_chunks"]],
         "next_chunks": [_citation_chunk_response(item) for item in row["next_chunks"]],
     }
 

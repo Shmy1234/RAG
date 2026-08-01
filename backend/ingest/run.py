@@ -1,21 +1,25 @@
 """Command-line entrypoint for Markdown filing ingestion."""
 
 import argparse
+import json
 from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
 from app.config import settings
-from ingest.chunking import ChunkRecord, chunk_markdown_document
+from ingest.chunking import ChunkRecord, chunk_extracted_document
 from ingest.embeddings import batch_embedding_inputs, embed_texts
 from ingest.manifest import IngestDocument, load_manifest
+from ingest.models import ExtractedDocument
 from ingest.repository import (
     create_sessionmaker,
     document_exists,
     insert_chunks,
+    insert_tables,
     replace_document,
 )
+from ingest.serialization import load_extracted_document
 
 DEFAULT_MARKDOWN_ROOT = Path(__file__).resolve().parents[2] / "data" / "Markdown"
 
@@ -25,6 +29,7 @@ class PreparedDocument:
     document: IngestDocument
     content: str
     chunks: list[ChunkRecord]
+    extracted: ExtractedDocument
 
 
 @dataclass(frozen=True)
@@ -104,14 +109,23 @@ def _prepare_documents(args: argparse.Namespace) -> list[PreparedDocument]:
     prepared: list[PreparedDocument] = []
     for document in documents:
         content = document.markdown_path.read_text(encoding="utf-8")
-        chunks = chunk_markdown_document(
-            document,
+        with document.structured_path.open(encoding="utf-8") as file:
+            extracted = load_extracted_document(json.load(file))
+        chunks = chunk_extracted_document(
+            extracted,
             embedding_model=settings.OPENAI_EMBEDDING_MODEL,
             max_tokens=args.max_chunk_tokens,
         )
         if args.limit_chunks is not None:
             chunks = chunks[: args.limit_chunks]
-        prepared.append(PreparedDocument(document=document, content=content, chunks=chunks))
+        prepared.append(
+            PreparedDocument(
+                document=document,
+                content=content,
+                chunks=chunks,
+                extracted=extracted,
+            )
+        )
     return prepared
 
 
@@ -168,7 +182,14 @@ def _upload_documents(prepared: list[PreparedDocument], args: argparse.Namespace
                 skipped += 1
                 continue
             source_document = replace_document(session, item.document, item.content)
-            insert_chunks(session, source_document, item.chunks, embeddings)
+            tables_by_index = insert_tables(session, source_document, item.extracted.tables)
+            insert_chunks(
+                session,
+                source_document,
+                item.chunks,
+                embeddings,
+                tables_by_index=tables_by_index,
+            )
         uploaded += 1
         print(
             f"uploaded accession={item.document.accession_number} "

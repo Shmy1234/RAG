@@ -61,6 +61,12 @@ class CitationSourceResponse(BaseModel):
     source_url: str
     citation_label: str
     location_label: str
+    kind: str = "narrative"
+    table_title: str | None = None
+    table_units: str | None = None
+    row_start: int | None = None
+    row_end: int | None = None
+    source_locator: dict[str, object] = Field(default_factory=dict)
     previous_chunks: list["CitationChunkResponse"] = Field(default_factory=list)
     next_chunks: list["CitationChunkResponse"] = Field(default_factory=list)
 
@@ -71,3 +77,4 @@ class CitationChunkResponse(BaseModel):
     text: str
     page_number: int | None
     section: str | None
+    kind: str = "narrative"

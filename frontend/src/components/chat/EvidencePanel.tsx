@@ -110,6 +110,11 @@ function EvidencePanelBody({ selection, onClose }: EvidencePanelProps) {
                 IN CONTEXT
               </p>
               <QuoteHighlight chunkText={source.chunk_text} quotedText={source.quoted_text} />
+              {source.kind === 'table' ? (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  {[source.table_title, source.table_units].filter(Boolean).join(' · ')}
+                </p>
+              ) : null}
             </div>
             <div>
               <p className="mb-1.5 font-mono text-[0.6875rem] tracking-tight text-muted-foreground">
@@ -126,6 +131,7 @@ function EvidencePanelBody({ selection, onClose }: EvidencePanelProps) {
                     text: source.chunk_text,
                     page_number: source.page_number,
                     section: source.section,
+                    kind: source.kind,
                   }}
                   label="Cited chunk"
                 />

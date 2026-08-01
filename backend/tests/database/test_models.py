@@ -6,6 +6,7 @@ EXPECTED_TABLES = {
     "users",
     "source_documents",
     "document_chunks",
+    "document_tables",
     "chat_threads",
     "chat_messages",
     "message_citations",
@@ -45,3 +46,18 @@ def test_document_chunks_are_configured_for_hybrid_retrieval() -> None:
     assert columns["embedding"].type.dim == 1536
     assert columns["search_vector"].computed is not None
     assert "to_tsvector" in str(columns["search_vector"].computed.sqltext)
+    assert columns["kind"].nullable is False
+    assert columns["table_id"].nullable is True
+
+
+def test_document_tables_preserve_structured_rows_and_provenance() -> None:
+    columns = inspect(Base.metadata.tables["document_tables"]).columns
+
+    assert columns["columns"].type.__class__.__name__ == "JSONB"
+    assert columns["rows"].type.__class__.__name__ == "JSONB"
+    assert columns["source_locator"].type.__class__.__name__ == "JSONB"
+    foreign_keys = {
+        foreign_key.target_fullname
+        for foreign_key in Base.metadata.tables["document_tables"].foreign_keys
+    }
+    assert foreign_keys == {"source_documents.id"}

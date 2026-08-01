@@ -21,6 +21,13 @@ def row(score=0.42):
         text="Revenue from Services increased.",
         page_number=12,
         section="Results of Operations",
+        kind="table",
+        table_id=UUID("00000000-0000-0000-0000-000000000003"),
+        table_title="Net Sales",
+        table_units="USD millions",
+        row_start=2,
+        row_end=2,
+        source_locator={"html_id": "sales"},
         ticker="AAPL",
         company_name="Apple Inc.",
         filing_type="10-K",
@@ -42,6 +49,8 @@ def test_chunk_reference_from_row_maps_database_fields():
     assert result.ticker == "AAPL"
     assert result.chunk_index == 3
     assert result.location_label == "page 12, Results of Operations"
+    assert result.kind == "table"
+    assert result.table_title == "Net Sales"
 
 
 def test_ranked_chunk_from_row_maps_database_fields():
@@ -67,6 +76,7 @@ def test_semantic_statement_uses_pgvector_cosine_distance_and_filters():
     assert "source_documents.ticker" in sql
     assert "source_documents.fiscal_year" in sql
     assert "LIMIT" in sql
+    assert "document_tables" in sql
 
 
 def test_full_text_statement_uses_websearch_to_tsquery_and_rank():

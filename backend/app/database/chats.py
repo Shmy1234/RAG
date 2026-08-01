@@ -103,18 +103,15 @@ class ChatStore:
         message_data: dict[str, object],
     ) -> dict[str, object]:
         response = await asyncio.to_thread(
-            lambda: (
-                self.client.rpc(
-                    "append_chat_message_atomic",
-                    {
-                        "p_thread_id": str(thread_id),
-                        "p_role": role,
-                        "p_content": content,
-                        "p_message_data": message_data,
-                    },
-                )
-                .execute()
-            )
+            lambda: self.client.rpc(
+                "append_chat_message_atomic",
+                {
+                    "p_thread_id": str(thread_id),
+                    "p_role": role,
+                    "p_content": content,
+                    "p_message_data": message_data,
+                },
+            ).execute()
         )
         return dict(response.data[0])
 
@@ -126,17 +123,15 @@ class ChatStore:
         citations: list[dict[str, object]],
     ) -> dict[str, object]:
         response = await asyncio.to_thread(
-            lambda: (
-                self.client.rpc(
-                    "append_grounded_answer_atomic",
-                    {
-                        "p_thread_id": str(thread_id),
-                        "p_content": content,
-                        "p_message_data": message_data,
-                        "p_citations": citations,
-                    },
-                ).execute()
-            )
+            lambda: self.client.rpc(
+                "append_grounded_answer_atomic",
+                {
+                    "p_thread_id": str(thread_id),
+                    "p_content": content,
+                    "p_message_data": message_data,
+                    "p_citations": citations,
+                },
+            ).execute()
         )
         return dict(response.data[0])
 
@@ -152,7 +147,8 @@ class ChatStore:
                 .select(
                     "citation_index,quoted_text,chunk_id,"
                     "chat_messages!inner(id,thread_id,chat_threads!inner(user_id)),"
-                    "document_chunks!inner(id,document_id,chunk_index,text,page_number,section,source_documents!inner("
+                    "document_chunks!inner(id,document_id,chunk_index,text,page_number,section,kind,table_id,"
+                    "row_start,row_end,source_locator,document_tables(title,units),source_documents!inner("
                     "ticker,company_name,filing_type,filing_date,source_url))"
                 )
                 .eq("message_id", str(message_id))
@@ -168,18 +164,21 @@ class ChatStore:
 
         row = dict(rows[0])
         chunk = row["document_chunks"]
-        neighbors = await asyncio.to_thread(
-            lambda: (
+
+        def fetch_neighbors():
+            query = (
                 self.client.table("document_chunks")
-                .select("id,chunk_index,text,page_number,section")
+                .select("id,chunk_index,text,page_number,section,kind")
                 .eq("document_id", chunk["document_id"])
                 .gte("chunk_index", max(0, chunk["chunk_index"] - 1))
                 .lte("chunk_index", chunk["chunk_index"] + 1)
                 .neq("id", chunk["id"])
-                .order("chunk_index")
-                .execute()
             )
-        )
+            if chunk.get("table_id") is not None:
+                query = query.eq("table_id", chunk["table_id"])
+            return query.order("chunk_index").execute()
+
+        neighbors = await asyncio.to_thread(fetch_neighbors)
         row["previous_chunks"] = [
             item for item in (neighbors.data or []) if item["chunk_index"] < chunk["chunk_index"]
         ]

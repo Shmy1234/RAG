@@ -32,6 +32,13 @@ class ChunkReference(BaseModel):
     fiscal_year: int
     accession_number: str
     source_url: str
+    kind: Literal["narrative", "table"] = "narrative"
+    table_id: UUID | None = None
+    table_title: str | None = None
+    table_units: str | None = None
+    row_start: int | None = None
+    row_end: int | None = None
+    source_locator: dict[str, object] = Field(default_factory=dict)
 
     @property
     def citation_label(self) -> str:
