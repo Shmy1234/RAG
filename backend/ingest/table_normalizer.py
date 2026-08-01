@@ -39,14 +39,21 @@ def _combine_values(tokens: list[str]) -> tuple[str, ...]:
 
 
 def _is_header_row(tokens: list[str]) -> bool:
-    return bool(tokens) and all(
-        token.casefold() in {"change", "years ended", "year ended"}
-        or bool(re.fullmatch(r"(?:19|20)\d{2}", token))
-        for token in tokens
+    def is_header_token(token: str) -> bool:
+        return (
+            token.casefold() in {"change", "years ended", "year ended"}
+            or bool(re.fullmatch(r"(?:19|20)\d{2}", token))
+        )
+
+    return bool(tokens) and (
+        all(is_header_token(token) for token in tokens)
+        or (len(tokens) > 1 and all(is_header_token(token) for token in tokens[1:]))
     )
 
 
 def _headers(header_tokens: list[str], value_count: int, title: str | None) -> tuple[str, ...]:
+    if len(header_tokens) == value_count + 1:
+        header_tokens = header_tokens[1:]
     logical: list[str] = []
     period: str | None = None
     for token in header_tokens:
@@ -85,16 +92,16 @@ def normalize_table_html(
         return None
 
     extracted_rows: list[ExtractedTableRow] = []
-    header_tokens: list[str] = []
+    header_rows: list[list[str]] = []
     for row in rows:
         tokens = _visible_tokens(row)
-        if _is_header_row(tokens):
-            header_tokens = tokens
+        if _is_header_row(tokens) and not extracted_rows:
+            header_rows.append(tokens)
             continue
         values = _combine_values(tokens)
         if not values:
-            if tokens:
-                header_tokens = tokens
+            if tokens and not extracted_rows:
+                header_rows.append(tokens)
             continue
         label = next(
             (token for token in tokens if token not in {"$", "%"} and not _NUMBER.match(token)), ""
@@ -115,6 +122,12 @@ def normalize_table_html(
     value_count = max(len(row.values) for row in extracted_rows)
     if value_count < 2 or any(len(row.values) != value_count for row in extracted_rows):
         return None
+    matching_headers = [
+        tokens for tokens in header_rows if len(tokens) in {value_count, value_count + 1}
+    ]
+    if not matching_headers:
+        return None
+    header_tokens = matching_headers[-1]
 
     return ExtractedTable(
         table_index=table_index,

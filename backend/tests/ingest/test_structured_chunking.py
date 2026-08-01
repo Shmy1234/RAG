@@ -1,3 +1,5 @@
+import pytest
+
 from ingest.chunking import chunk_extracted_document
 from ingest.models import DocumentBlock, ExtractedDocument
 from ingest.sec_html import extract_sec_html
@@ -30,7 +32,7 @@ def test_structured_document_serializes_clean_logical_markdown():
     assert "| Segment | 2024 | 2023 |" in markdown
     assert "| Americas | $167,045 | $162,560 |" in markdown
     assert "Americas | Americas" not in markdown
-    assert payload["extraction_version"] == "sec-html-v1"
+    assert payload["extraction_version"] == "sec-html-v2"
     assert payload["tables"][0]["source_locator"]["html_id"] == "segments"
 
 
@@ -60,6 +62,14 @@ def test_structured_document_round_trips_from_json_dict():
     restored = load_extracted_document(extracted_document_dict(original))
 
     assert restored == original
+
+
+def test_structured_document_rejects_stale_extraction_version():
+    payload = extracted_document_dict(extract_sec_html(SOURCE))
+    payload["extraction_version"] = "sec-html-v1"
+
+    with pytest.raises(ValueError, match="regenerate structured artifacts"):
+        load_extracted_document(payload)
 
 
 def test_long_narrative_block_is_split_without_being_dropped():

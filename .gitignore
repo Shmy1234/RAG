@@ -59,6 +59,7 @@ yarn.lock
 # Local corpus payloads and generated ingestion output
 data/downloads/
 data/Markdown/
+data/Structured/
 data/html_to_markdown/
 data/**/*.htm
 data/**/*.html

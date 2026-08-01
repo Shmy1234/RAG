@@ -91,7 +91,7 @@ def test_prepare_documents_uses_structured_table_artifact(tmp_path):
     (markdown_root / "filing.md").write_text("# Filing\n", encoding="utf-8")
     (structured_root / "filing.json").write_text(
         """{
-          "extraction_version": "sec-html-v1",
+          "extraction_version": "sec-html-v2",
           "blocks": [{"block_index": 0, "kind": "table", "section_path": ["Item 7"],
                       "text": null, "table_index": 0, "source_locator": {}}],
           "tables": [{"table_index": 0, "title": "Revenue", "units": "USD millions",

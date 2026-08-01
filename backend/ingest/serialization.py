@@ -3,6 +3,7 @@
 from dataclasses import asdict
 
 from ingest.models import (
+    EXTRACTION_VERSION,
     DocumentBlock,
     ExtractedDocument,
     ExtractedTable,
@@ -20,6 +21,11 @@ def _locator(payload: dict[str, object] | None) -> SourceLocator:
 
 
 def load_extracted_document(payload: dict[str, object]) -> ExtractedDocument:
+    extraction_version = payload.get("extraction_version")
+    if extraction_version != EXTRACTION_VERSION:
+        raise ValueError(
+            f"unsupported extraction version {extraction_version!r}; regenerate structured artifacts"
+        )
     tables = []
     for item in payload.get("tables", []):
         table = dict(item)
@@ -59,7 +65,7 @@ def load_extracted_document(payload: dict[str, object]) -> ExtractedDocument:
     return ExtractedDocument(
         blocks=blocks,
         tables=tuple(tables),
-        extraction_version=payload.get("extraction_version", "sec-html-v1"),
+        extraction_version=EXTRACTION_VERSION,
     )
 
 

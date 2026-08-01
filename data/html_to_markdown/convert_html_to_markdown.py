@@ -13,6 +13,7 @@ DATA_DIR = Path(__file__).resolve().parents[1]
 DEFAULT_INPUT_DIR = DATA_DIR / "downloads"
 DEFAULT_OUTPUT_DIR = DATA_DIR / "Markdown"
 HTML_SUFFIXES = {".htm", ".html"}
+EXTRACTION_VERSION = "sec-html-v2"
 SEC_ITEM_HEADING = re.compile(r"^(Item\s+\d+[A-Z]?\.\s+.+)$", re.IGNORECASE | re.MULTILINE)
 
 
@@ -110,7 +111,7 @@ def rewrite_manifest(
             )
         filing["structured_local_path"] = structured_path.relative_to(structured_root).as_posix()
         filing["structured_sha256"] = sha256_file(structured_path)
-        filing["extraction_version"] = "sec-html-v1"
+        filing["extraction_version"] = EXTRACTION_VERSION
 
     write_text_atomic(output_root / "manifest.json", json.dumps(manifest, indent=2) + "\n")
     return manifest
@@ -130,9 +131,14 @@ def convert_html_files(input_root: Path, output_root: Path, overwrite: bool) -> 
         output_path = markdown_path_for(source_path, input_root, output_root)
         structured_path = structured_root / source_path.relative_to(input_root).with_suffix(".json")
         if output_path.exists() and structured_path.exists() and not overwrite:
-            skipped += 1
-            verified_outputs.add(output_path)
-            continue
+            try:
+                existing = json.loads(structured_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                existing = {}
+            if existing.get("extraction_version") == EXTRACTION_VERSION:
+                skipped += 1
+                verified_outputs.add(output_path)
+                continue
 
         try:
             document = extract_sec_html(source_path.read_bytes())

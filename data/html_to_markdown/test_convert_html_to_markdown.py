@@ -205,3 +205,23 @@ def test_convert_regenerates_legacy_markdown_when_structured_artifact_is_missing
     assert summary.converted == 1
     assert summary.skipped == 0
     assert (output_root.parent / "Structured" / "filing.json").is_file()
+
+
+def test_convert_regenerates_stale_structured_extraction_version(tmp_path):
+    input_root = tmp_path / "downloads"
+    output_root = tmp_path / "Markdown"
+    structured_root = tmp_path / "Structured"
+    input_root.mkdir()
+    output_root.mkdir()
+    structured_root.mkdir()
+    (input_root / "filing.htm").write_text("<html><body><p>Current filing.</p></body></html>")
+    (output_root / "filing.md").write_text("stale output")
+    (structured_root / "filing.json").write_text(
+        json.dumps({"blocks": [], "tables": [], "extraction_version": "sec-html-v1"})
+    )
+
+    summary = convert_html_files(input_root, output_root, overwrite=False)
+
+    assert summary.converted == 1
+    payload = json.loads((structured_root / "filing.json").read_text())
+    assert payload["extraction_version"] == "sec-html-v2"

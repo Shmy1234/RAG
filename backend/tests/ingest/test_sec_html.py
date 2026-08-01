@@ -21,6 +21,7 @@ def test_extract_sec_html_preserves_section_and_table_context():
     assert table.title == "Segment Operating Performance"
     assert table.units == "USD millions"
     assert table.section_path[0].startswith("Item 7.")
+    assert len(table.section_path) == 1
     assert table.rows[0].values == ("$167,045", "$162,560")
     assert document.blocks[-1].kind == "table"
     assert document.blocks[-1].table_index == 0
@@ -61,3 +62,37 @@ def test_extract_sec_html_combines_split_sec_item_heading():
 
     assert document.blocks[0].text == "Item 1. Business"
     assert document.blocks[-1].section_path == ("Item 1. Business",)
+
+
+def test_extract_sec_html_does_not_duplicate_table_descendants_as_narrative():
+    source = """
+    <html><body>
+      <p>Results</p>
+      <table><tr><th>Metric</th><th><p>2025</p></th><th>2024</th></tr>
+      <tr><td><div>Revenue</div></td><td>10</td><td>9</td></tr>
+      <tr><td>Income</td><td>9</td><td>8</td></tr></table>
+      <p>After the table.</p>
+    </body></html>
+    """
+
+    document = extract_sec_html(source)
+
+    narrative = [block.text for block in document.blocks if block.kind == "text"]
+    assert narrative == ["Results", "After the table."]
+
+
+def test_extract_sec_html_preserves_rejected_table_as_narrative():
+    source = """
+    <html><body><p>Executive officers</p><table>
+      <tr><th>Name</th><th>Age</th><th>Position</th></tr>
+      <tr><td>Jane Doe</td><td>57</td><td>Chief Executive Officer</td></tr>
+    </table></body></html>
+    """
+
+    document = extract_sec_html(source)
+
+    assert document.tables == ()
+    assert [block.text for block in document.blocks] == [
+        "Executive officers",
+        "Name Age Position Jane Doe 57 Chief Executive Officer",
+    ]

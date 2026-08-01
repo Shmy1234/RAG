@@ -58,3 +58,52 @@ def test_normalize_table_html_rejects_layout_only_table():
     )
 
     assert table is None
+
+
+def test_normalize_table_html_keeps_multiline_headers_over_body_group_labels():
+    table = normalize_table_html(
+        """
+        <table>
+          <tr><th></th><th colspan="2">Years ended June 30</th></tr>
+          <tr><th></th><th>2025</th><th>2024</th></tr>
+          <tr><td>Operating expenses:</td><td></td><td></td></tr>
+          <tr><td>Research and development</td><td>32,488</td><td>29,510</td></tr>
+        </table>
+        """,
+        table_index=0,
+    )
+
+    assert table is not None
+    assert table.headers == ("Row", "2025", "2024")
+    assert table.rows[0].label == "Research and development"
+    assert table.rows[0].values == ("32,488", "29,510")
+
+
+def test_normalize_table_html_rejects_values_without_reliable_period_headers():
+    table = normalize_table_html(
+        """
+        <table>
+          <tr><td>Operating expenses:</td><td></td><td></td></tr>
+          <tr><td>Research and development</td><td>32,488</td><td>29,510</td></tr>
+        </table>
+        """,
+        table_index=0,
+    )
+
+    assert table is None
+
+
+def test_normalize_table_html_maps_descriptive_column_headers():
+    table = normalize_table_html(
+        """
+        <table>
+          <tr><th>Location</th><th>Owned</th><th>Leased</th><th>Total</th></tr>
+          <tr><td>U.S.</td><td>34</td><td>23</td><td>57</td></tr>
+          <tr><td>International</td><td>13</td><td>27</td><td>40</td></tr>
+        </table>
+        """,
+        table_index=0,
+    )
+
+    assert table is not None
+    assert table.headers == ("Row", "Owned", "Leased", "Total")

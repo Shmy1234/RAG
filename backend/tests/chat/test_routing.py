@@ -63,6 +63,23 @@ def test_direct_route_reuses_answer_from_routing_call():
 
 
 @pytest.mark.parametrize(
+    "prompt",
+    [
+        "How do citations work?",
+        "How can I inspect the source evidence?",
+        "What is the difference between quick research and deep research?",
+    ],
+)
+def test_product_help_direct_decision_stays_in_direct_lane(prompt: str):
+    expected = ModelRouteDecision(route="direct", answer="Product guidance.")
+    runner = FakeRouteRunner(expected)
+
+    decision = asyncio.run(ChatRouter(runner).route(prompt))
+
+    assert decision == RouteDecision(route="direct", answer="Product guidance.")
+
+
+@pytest.mark.parametrize(
     "data",
     [
         {"route": "instant"},

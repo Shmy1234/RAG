@@ -37,6 +37,13 @@ _SAFE_DIRECT_PATTERNS = tuple(
         ),
     )
 )
+_PRODUCT_HELP = re.compile(
+    r"\b(?:citation|citations|source evidence|source panel|quick research|deep research)\b"
+)
+_FILING_FACT = re.compile(
+    r"\b(?:apple|microsoft|nvidia|amazon|alphabet|google|aapl|msft|nvda|amzn|googl|"
+    r"revenue|income|margin|10-k|10-q|20\d{2})\b"
+)
 _INSTANT_RESPONSES = {
     "hi": "Hi! How can I help with your filing research?",
     "hello": "Hello! How can I help with your filing research?",
@@ -99,7 +106,9 @@ def instant_response(prompt: str) -> str | None:
 
 def direct_response_allowed(prompt: str) -> bool:
     normalized = " ".join(prompt.split()).casefold()
-    return any(pattern.match(normalized) for pattern in _SAFE_DIRECT_PATTERNS)
+    if any(pattern.match(normalized) for pattern in _SAFE_DIRECT_PATTERNS):
+        return True
+    return bool(_PRODUCT_HELP.search(normalized)) and not _FILING_FACT.search(normalized)
 
 
 class ChatRouter:

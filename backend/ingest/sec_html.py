@@ -18,6 +18,11 @@ def _text(element) -> str:
     return " ".join(element.text_content().replace("\u00a0", " ").split())
 
 
+def _table_text(element) -> str:
+    cells = element.xpath(".//th|.//td")
+    return " ".join(text for cell in cells if (text := _text(cell)))
+
+
 def _hidden(element) -> bool:
     hidden_by_ancestor = any(
         ancestor.tag.lower() in {"ix:hidden", "script", "style"}
@@ -45,7 +50,12 @@ def extract_sec_html(source: str | bytes) -> ExtractedDocument:
     root = html.fromstring(source)
     tree = root.getroottree()
     candidates = root.xpath(
-        "//p|//div[not(.//p or .//div or .//table)]|//h1|//h2|//h3|//h4|//h5|//h6|//table"
+        "//p[not(ancestor::table)]"
+        "|//div[not(ancestor::table) and not(.//p or .//div or .//table)]"
+        "|//h1[not(ancestor::table)]|//h2[not(ancestor::table)]"
+        "|//h3[not(ancestor::table)]|//h4[not(ancestor::table)]"
+        "|//h5[not(ancestor::table)]|//h6[not(ancestor::table)]"
+        "|//table[not(ancestor::table)]"
     )
     blocks: list[DocumentBlock] = []
     tables = []
@@ -102,9 +112,20 @@ def extract_sec_html(source: str | bytes) -> ExtractedDocument:
             table_index=len(tables),
             title=title,
             units=_units(caption),
-            section_path=tuple(value for value in (section, title) if value),
+            section_path=(section,) if section else (),
         )
         if table is None:
+            text = _table_text(element)
+            if text:
+                blocks.append(
+                    DocumentBlock(
+                        block_index=len(blocks),
+                        kind="text",
+                        section_path=(section,) if section else (),
+                        text=text,
+                        source_locator=locator,
+                    )
+                )
             continue
         tables.append(table)
         blocks.append(

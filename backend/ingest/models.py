@@ -3,6 +3,8 @@
 from dataclasses import dataclass, field
 from typing import Literal
 
+EXTRACTION_VERSION = "sec-html-v2"
+
 
 @dataclass(frozen=True)
 class SourceLocator:
@@ -46,4 +48,4 @@ class DocumentBlock:
 class ExtractedDocument:
     blocks: tuple[DocumentBlock, ...]
     tables: tuple[ExtractedTable, ...]
-    extraction_version: str = "sec-html-v1"
+    extraction_version: str = EXTRACTION_VERSION
