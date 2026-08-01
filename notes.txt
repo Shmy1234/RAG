@@ -1,0 +1,11 @@
+Setup:
+1. download python, uv,
+2. Gather data —> uv run download.py 
+- Hallucination
+- Reasoning Error
+- Data bias 
+- overgeneralization
+- retrieval failure 
+
+
+3. Create todos.md and ai todos of what to do in app
