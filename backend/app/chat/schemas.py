@@ -1,0 +1,43 @@
+from datetime import datetime
+from typing import Literal
+from uuid import UUID
+
+from pydantic import BaseModel, Field
+
+
+class ChatThreadResponse(BaseModel):
+    id: UUID
+    title: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class ChatMessageResponse(BaseModel):
+    id: UUID
+    thread_id: UUID
+    position: int
+    role: Literal["user", "assistant"]
+    content: str
+    message_data: dict[str, object] = Field(default_factory=dict)
+    created_at: datetime
+
+
+class CreateThreadRequest(BaseModel):
+    title: str | None = Field(default=None, max_length=255)
+
+
+class UIMessagePart(BaseModel):
+    type: str
+    text: str | None = None
+
+
+class UIMessage(BaseModel):
+    id: str | None = None
+    role: str
+    content: str | None = None
+    parts: list[UIMessagePart] = Field(default_factory=list)
+
+
+class StreamChatRequest(BaseModel):
+    thread_id: UUID = Field(alias="threadId")
+    messages: list[UIMessage] = Field(default_factory=list)

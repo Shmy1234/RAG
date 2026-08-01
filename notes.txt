@@ -30,3 +30,9 @@ Setup:
 6. Authenication 
 - Supabsae check email options and setup url confirguration 
 - setup signup pages 
+
+7. Implement backend and frontend 
+- Componets for frontend 
+- API-design for backend 
+
+8. 

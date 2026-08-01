@@ -3,7 +3,7 @@ import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from 'rea
 import { AuthProvider } from '@/auth/AuthProvider'
 import { useAuth } from '@/auth/auth-context'
 import { AuthPage } from '@/pages/AuthPage'
-import { ProtectedPage } from '@/pages/ProtectedPage'
+import { ChatPage } from '@/pages/ChatPage'
 
 function ProtectedRoute() {
   const { loading, session } = useAuth()
@@ -14,7 +14,7 @@ function ProtectedRoute() {
 }
 
 function App() {
-  return <BrowserRouter><AuthProvider><Routes><Route path="/sign-in" element={<AuthPage mode="sign-in" />} /><Route path="/sign-up" element={<AuthPage mode="sign-up" />} /><Route element={<ProtectedRoute />}><Route path="/app" element={<ProtectedPage />} /></Route><Route path="*" element={<Navigate to="/app" replace />} /></Routes></AuthProvider></BrowserRouter>
+  return <BrowserRouter><AuthProvider><Routes><Route path="/sign-in" element={<AuthPage mode="sign-in" />} /><Route path="/sign-up" element={<AuthPage mode="sign-up" />} /><Route element={<ProtectedRoute />}><Route path="/app" element={<ChatPage />} /><Route path="/app/chats/:threadId" element={<ChatPage />} /></Route><Route path="*" element={<Navigate to="/app" replace />} /></Routes></AuthProvider></BrowserRouter>
 }
 
 export default App
