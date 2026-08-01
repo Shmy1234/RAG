@@ -24,7 +24,12 @@ async def search_filings(
 ) -> list[SourcePassage]:
     if top_k < 1:
         raise ValueError("top_k must be greater than zero")
-    passages = await ctx.deps.retriever.retrieve(query, top_k=min(top_k, 10), candidate_k=50)
+    passages = await ctx.deps.retriever.retrieve(
+        query,
+        top_k=min(top_k, 10),
+        candidate_k=50,
+        filters=ctx.deps.retrieval_filters,
+    )
     ctx.deps.retrieved_passages.extend(passages)
     return passages
 

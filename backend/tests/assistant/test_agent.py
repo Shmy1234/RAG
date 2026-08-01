@@ -7,7 +7,7 @@ from pydantic_ai.models.test import TestModel
 from app.assistant.agent import document_agent
 from app.assistant.deps import DocumentAgentDeps
 from app.assistant.outputs import Citation, GroundedAnswer
-from app.retrieval.schemas import ChunkReference, SourcePassage
+from app.retrieval.schemas import ChunkReference, RetrievalFilters, SourcePassage
 
 
 def chunk() -> ChunkReference:
@@ -29,9 +29,13 @@ def chunk() -> ChunkReference:
 
 
 class FakeRetriever:
-    async def retrieve(self, query: str, *, top_k: int = 5, **kwargs):
+    def __init__(self):
+        self.filters = None
+
+    async def retrieve(self, query: str, *, top_k: int = 5, filters=None, **kwargs):
         assert query
         assert top_k == 5
+        self.filters = filters
         return [SourcePassage(center={"chunk": chunk(), "rrf_score": 1.0})]
 
     async def read_chunk(self, chunk_id):
@@ -60,11 +64,17 @@ def test_document_agent_returns_typed_output_and_exposes_search_tool():
         ],
         "cited_passages": [],
     }
+    retriever = FakeRetriever()
     deps = DocumentAgentDeps(
         user_id=uuid4(),
         thread_id=uuid4(),
-        retriever=FakeRetriever(),
+        retriever=retriever,
         grounding_validator=FakeValidator(),
+        retrieval_filters=RetrievalFilters(
+            tickers=("AAPL",),
+            filing_types=("10-K",),
+            fiscal_years=(2025,),
+        ),
     )
 
     result = asyncio.run(
@@ -81,3 +91,8 @@ def test_document_agent_returns_typed_output_and_exposes_search_tool():
     assert isinstance(result.output, GroundedAnswer)
     assert result.output.citations[0].citation_index == 0
     assert isinstance(result.output.citations[0], Citation)
+    assert retriever.filters == RetrievalFilters(
+        tickers=("AAPL",),
+        filing_types=("10-K",),
+        fiscal_years=(2025,),
+    )
