@@ -47,6 +47,23 @@ class ChatStore:
         )
         return dict(response.data[0])
 
+    async def update_thread_title(
+        self,
+        user_id: UUID,
+        thread_id: UUID,
+        title: str,
+    ) -> dict[str, object]:
+        await self.get_thread(user_id, thread_id)
+        response = await asyncio.to_thread(
+            lambda: (
+                self.client.table("chat_threads")
+                .update({"title": title})
+                .eq("id", str(thread_id))
+                .execute()
+            )
+        )
+        return dict(response.data[0])
+
     async def get_thread(self, user_id: UUID, thread_id: UUID) -> dict[str, object]:
         response = await asyncio.to_thread(
             lambda: (
@@ -135,3 +152,28 @@ class ChatStore:
                 ).execute()
 
         await asyncio.to_thread(insert_rows)
+
+    async def get_citation_source(
+        self,
+        user_id: UUID,
+        message_id: UUID,
+        citation_index: int,
+    ) -> dict[str, object] | None:
+        response = await asyncio.to_thread(
+            lambda: (
+                self.client.table("message_citations")
+                .select(
+                    "citation_index,quoted_text,chunk_id,"
+                    "chat_messages!inner(id,thread_id,chat_threads!inner(user_id)),"
+                    "document_chunks!inner(text,page_number,section,source_documents!inner("
+                    "ticker,company_name,filing_type,filing_date,source_url))"
+                )
+                .eq("message_id", str(message_id))
+                .eq("citation_index", citation_index)
+                .eq("chat_messages.chat_threads.user_id", str(user_id))
+                .limit(1)
+                .execute()
+            )
+        )
+        rows = response.data or []
+        return dict(rows[0]) if rows else None

@@ -70,6 +70,10 @@ data/**/*.db
 # Keep data tooling and docs tracked
 !data/README.md
 !data/download.py
+!data/html_to_markdown/
+!data/html_to_markdown/README.md
+!data/html_to_markdown/convert_html_to_markdown.py
+!data/html_to_markdown/test_convert_html_to_markdown.py
 
 # OS and editor files
 .DS_Store

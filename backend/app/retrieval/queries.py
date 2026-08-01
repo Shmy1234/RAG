@@ -6,6 +6,7 @@ from sqlalchemy import Select, desc, func, select
 from sqlalchemy.orm import Session
 
 from app.database.models.documents import DocumentChunk, SourceDocument
+from app.retrieval.normalization import normalize_full_text_query
 from app.retrieval.schemas import ChunkReference, RankedChunk, RetrievalFilters
 
 
@@ -129,7 +130,7 @@ def full_text_search(
     limit: int,
     filters: RetrievalFilters,
 ) -> list[RankedChunk]:
-    normalized = query.strip()
+    normalized = normalize_full_text_query(query)
     if limit < 1 or not normalized:
         return []
     rows = session.execute(

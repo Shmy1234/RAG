@@ -33,6 +33,9 @@ build-backend = "hatchling.build"
 packages = ["app", "ingest"]
 
 [tool.pytest.ini_options]
+addopts = [
+    "--import-mode=importlib",
+]
 markers = [
     "integration: tests that require external services",
 ]

@@ -13,6 +13,7 @@
 - Use the locked FastAPI, Supabase Postgres, OpenAI, PydanticAI, and SQLAlchemy stack.
 - Do not add runtime dependencies.
 - Do not call `os.getenv`, `os.environ`, or `load_dotenv` in application modules; use `app.config.settings`.
+- Require an explicit `OPENAI_CHAT_MODEL` PydanticAI model identifier, such as `openai:gpt-5-mini`; the production agent must never be constructed with `model=None`.
 - Fast tests must not call OpenAI, Supabase, or a real database.
 - The agent may answer only from retrieved passages and must refuse unsupported questions clearly.
 - Every successful factual answer must contain at least one valid citation; invalid or missing citations fail closed.
@@ -21,6 +22,7 @@
 
 ## Files
 
+- Modify `backend/app/config.py`, `backend/.env.example`, `backend/app/assistant/agent.py`, `backend/tests/test_config.py`, and `backend/tests/assistant/test_agent.py` to configure and verify the production chat model.
 - Complete `backend/app/retrieval/retriever.py` and `backend/tests/retrieval/test_retriever.py`.
 - Create `backend/app/assistant/instructions.md`, `deps.py`, `outputs.py`, `agent.py` and focused tests.
 - Create `backend/app/grounding/validator.py` and focused tests.
@@ -28,6 +30,126 @@
 - Extend `backend/app/database/chats.py` with citation persistence and test it.
 - Modify `backend/app/api/chat.py` to use the orchestrator, preserving auth and thread checks.
 - Add optional integration verification and update only Phase 6 in `docs/todos.md` after verification.
+
+## Task 0: Production Chat Model Configuration — P0 Blocker
+
+**Root cause:** The production `document_agent` is currently constructed without a model, while tests pass `TestModel(...)` directly. Every real `document_agent.run(...)` therefore raises `UserError: \`model\` must either be set on the agent or included when calling it.` before retrieval or answer generation begins. The stream catches that exception as `processing_failed`, producing the generic “Something went wrong” UI.
+
+**Files:**
+- Modify: `backend/app/config.py`
+- Modify: `backend/.env.example`
+- Modify: `backend/app/assistant/agent.py`
+- Modify: `backend/tests/test_config.py`
+- Modify: `backend/tests/assistant/test_agent.py`
+- Modify: `backend/tests/test_smoke_assistance.py`
+
+**Interfaces:**
+- Produces: `settings.OPENAI_CHAT_MODEL: str`, containing a complete PydanticAI model identifier such as `openai:gpt-5-mini`.
+- Consumes: `OPENAI_API_KEY`, already validated by `app.config.Settings`.
+- Guarantees: `document_agent.model` is not `None` in production wiring; offline tests continue to override it with `TestModel` and make no network calls.
+
+- [ ] **Step 1: Write failing configuration tests**
+
+Add tests proving that `OPENAI_CHAT_MODEL` is required and cannot be blank:
+
+```python
+def test_settings_requires_chat_model(valid_environment):
+    valid_environment.pop("OPENAI_CHAT_MODEL")
+
+    with pytest.raises(ValidationError, match="OPENAI_CHAT_MODEL"):
+        Settings(_env_file=None, **valid_environment)
+
+
+def test_settings_rejects_blank_chat_model(valid_environment):
+    valid_environment["OPENAI_CHAT_MODEL"] = "   "
+
+    with pytest.raises(ValidationError, match="must not be empty"):
+        Settings(_env_file=None, **valid_environment)
+```
+
+- [ ] **Step 2: Run the focused configuration tests and confirm failure**
+
+Run: `cd backend && uv run pytest tests/test_config.py -q`
+
+Expected: FAIL because `Settings` does not define or require `OPENAI_CHAT_MODEL`.
+
+- [ ] **Step 3: Add fail-fast chat model configuration**
+
+Add the required setting and include it in the existing non-empty validator:
+
+```python
+class Settings(BaseSettings):
+    OPENAI_API_KEY: str
+    OPENAI_CHAT_MODEL: str
+    OPENAI_EMBEDDING_MODEL: str = "text-embedding-3-small"
+```
+
+Add this local-development example to `backend/.env.example`:
+
+```dotenv
+OPENAI_CHAT_MODEL=openai:gpt-5-mini
+```
+
+The value must include the provider prefix expected by PydanticAI. Do not silently default production to an unspecified model.
+
+- [ ] **Step 4: Bind the configured model to the production agent**
+
+Update the agent construction:
+
+```python
+from app.config import settings
+
+
+document_agent = Agent(
+    settings.OPENAI_CHAT_MODEL,
+    deps_type=DocumentAgentDeps,
+    output_type=AgentAnswer,
+    instructions=_instructions,
+    retries=1,
+)
+```
+
+Do not pass the embedding model to `Agent`; chat generation and embeddings are separate configuration contracts.
+
+- [ ] **Step 5: Add a production-wiring regression test**
+
+Add an offline assertion that catches the exact regression without calling OpenAI:
+
+```python
+def test_document_agent_has_production_model():
+    assert document_agent.model is not None
+```
+
+Keep the existing typed-output test using `model=TestModel(...)` so it remains network-free.
+
+- [ ] **Step 6: Add a controlled real-agent smoke test**
+
+Update `backend/smoke_assistance.py` and its test so the live path uses the same configured `document_agent` as `POST /chat/stream`. The scripted smoke test must report the selected model identifier, submit one bounded question, and fail with a non-zero exit code if model execution, retrieval, grounding, or persistence fails. It must not print API keys, database credentials, or service-role credentials.
+
+- [ ] **Step 7: Run offline verification**
+
+Run:
+
+```bash
+cd backend
+uv run pytest tests/test_config.py tests/assistant/test_agent.py tests/test_smoke_assistance.py -q
+uv run ruff check app tests smoke_assistance.py
+```
+
+Expected: all focused tests and lint checks pass without network calls.
+
+- [ ] **Step 8: Run one explicitly approved live generation smoke test**
+
+Run the documented smoke command only when valid OpenAI and Supabase credentials and an ingested corpus are available.
+
+Expected: the configured chat model executes, invokes bounded filing retrieval, returns a grounded result or an explicit insufficient-evidence result, and does not emit `processing_failed` because of missing model configuration.
+
+- [ ] **Step 9: Commit**
+
+```bash
+git add backend/.env.example backend/app/config.py backend/app/assistant/agent.py backend/smoke_assistance.py backend/tests/test_config.py backend/tests/assistant/test_agent.py backend/tests/test_smoke_assistance.py docs/superpowers/plans/2026-08-01-phase-6-agent-grounding.md
+git commit -m "fix: configure production chat model"
+```
 
 ## Task 1: Finish Retrieval Orchestration
 

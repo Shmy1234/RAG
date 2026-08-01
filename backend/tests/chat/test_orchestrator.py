@@ -5,7 +5,7 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from app.assistant.outputs import Citation, GroundedAnswer
+from app.assistant.outputs import AgentAnswer, Citation, CitationDraft, GroundedAnswer
 from app.chat.orchestrator import run_chat_turn
 from app.grounding.validator import GroundingError, GroundingValidator
 from app.retrieval.schemas import ChunkReference, FusedChunk, SourcePassage
@@ -31,7 +31,11 @@ def passage() -> SourcePassage:
 
 
 class FakeRetriever:
+    def __init__(self):
+        self.retrieve_calls = 0
+
     async def retrieve(self, query: str, **kwargs):
+        self.retrieve_calls += 1
         return [passage()]
 
 
@@ -68,13 +72,31 @@ def grounded_answer() -> GroundedAnswer:
 class FakeAgent:
     def __init__(self, answer):
         self.answer = answer
+        self.usage_limits = None
 
-    async def run(self, prompt, *, deps):
+    async def run(self, prompt, *, deps, usage_limits):
+        self.usage_limits = usage_limits
+        deps.add_passages(await deps.retriever.retrieve(prompt))
         return SimpleNamespace(output=self.answer)
+
+
+class EvidenceAgent:
+    async def run(self, prompt, *, deps, usage_limits):
+        passages = await deps.retriever.retrieve(prompt)
+        deps.add_passages(passages)
+        evidence = deps.register_passage_evidence(passages, prompt)[0]
+        return SimpleNamespace(
+            output=AgentAnswer(
+                answer="Services revenue increased.",
+                citations=[CitationDraft(evidence_id=evidence.evidence_id)],
+            )
+        )
 
 
 def test_run_chat_turn_persists_only_validated_answer_and_citations():
     store = FakeStore()
+    retriever = FakeRetriever()
+    agent = FakeAgent(grounded_answer())
 
     result = asyncio.run(
         run_chat_turn(
@@ -82,8 +104,8 @@ def test_run_chat_turn_persists_only_validated_answer_and_citations():
             thread_id=uuid4(),
             user_text="What happened to Services revenue?",
             store=store,
-            agent_runner=FakeAgent(grounded_answer()),
-            retriever=FakeRetriever(),
+            agent_runner=agent,
+            retriever=retriever,
             grounding_validator=GroundingValidator(),
         )
     )
@@ -92,11 +114,14 @@ def test_run_chat_turn_persists_only_validated_answer_and_citations():
     assert [message["role"] for message in store.messages] == ["user", "assistant"]
     assert len(store.citations) == 1
     assert store.citations[0]["citation_index"] == 0
+    assert retriever.retrieve_calls == 1
+    assert agent.usage_limits.request_limit == 4
+    assert agent.usage_limits.tool_calls_limit == 6
 
 
 def test_run_chat_turn_does_not_persist_assistant_on_grounding_failure():
     store = FakeStore()
-    invalid = grounded_answer().model_copy(update={"citations": []})
+    invalid = AgentAnswer(answer="Unsupported.", citations=[])
 
     with pytest.raises(GroundingError):
         asyncio.run(
@@ -113,3 +138,22 @@ def test_run_chat_turn_does_not_persist_assistant_on_grounding_failure():
 
     assert [message["role"] for message in store.messages] == ["user"]
     assert store.citations == []
+
+
+def test_run_chat_turn_validates_registered_evidence_before_persistence():
+    store = FakeStore()
+
+    result = asyncio.run(
+        run_chat_turn(
+            user_id=uuid4(),
+            thread_id=uuid4(),
+            user_text="What happened to Services revenue?",
+            store=store,
+            agent_runner=EvidenceAgent(),
+            retriever=FakeRetriever(),
+            grounding_validator=GroundingValidator(),
+        )
+    )
+
+    assert result.citations[0].quoted_text == passage().center.chunk.text
+    assert len(store.citations) == 1

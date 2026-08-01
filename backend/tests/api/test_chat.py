@@ -5,6 +5,7 @@ from uuid import UUID, uuid4
 import pytest
 from fastapi import status
 from httpx import ASGITransport, AsyncClient
+from pydantic_ai.exceptions import UsageLimitExceeded
 
 from app.api.chat import (
     get_agent_runner,
@@ -91,12 +92,17 @@ class FakeRetriever:
 
 
 class FakeAgent:
-    async def run(self, prompt: str, *, deps):
+    async def run(self, prompt: str, *, deps, usage_limits):
         return SimpleNamespace(output=GroundedAnswer(answer=build_stub_reply(prompt)))
 
 
+class ExhaustedAgent:
+    async def run(self, prompt: str, *, deps, usage_limits):
+        raise UsageLimitExceeded("request limit reached")
+
+
 class FakeGroundingValidator:
-    def validate(self, answer, passages):
+    def validate(self, answer, passages, *, evidence_candidates=None):
         return answer
 
 
@@ -161,6 +167,36 @@ async def test_stream_persists_messages_and_returns_stub(user, store):
     assert '"type": "text-delta"' in response.text
     assert '"type": "finish"' in response.text
     assert [message["role"] for message in store.messages] == ["user", "assistant"]
+
+
+@pytest.mark.anyio
+async def test_stream_returns_controlled_error_when_agent_exhausts_budget(user, store):
+    async def override_user():
+        return user
+
+    app.dependency_overrides[get_current_user] = override_user
+    app.dependency_overrides[get_chat_store] = lambda: store
+    app.dependency_overrides[get_document_retriever] = lambda: FakeRetriever()
+    app.dependency_overrides[get_agent_runner] = lambda: ExhaustedAgent()
+    app.dependency_overrides[get_grounding_validator] = lambda: FakeGroundingValidator()
+    await store.create_thread(user.id, "Apple revenue mix")
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/chat/stream",
+            json={
+                "threadId": str(store.thread_id),
+                "messages": [{"role": "user", "content": "What changed?"}],
+            },
+        )
+
+    # The stream opens before orchestration, so a post-stream failure arrives as a
+    # typed data-error part rather than an HTTP status.
+    assert response.status_code == status.HTTP_200_OK
+    assert '"type": "data-error"' in response.text
+    assert '"code": "processing_failed"' in response.text
+    assert '"type": "text-delta"' not in response.text
+    assert "UsageLimitExceeded" not in response.text
 
 
 @pytest.mark.anyio

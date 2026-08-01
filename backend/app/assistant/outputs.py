@@ -13,6 +13,15 @@ class Citation(BaseModel):
     location_label: str
 
 
+class CitationDraft(BaseModel):
+    evidence_id: UUID
+
+
+class AgentAnswer(BaseModel):
+    answer: str
+    citations: list[CitationDraft] = Field(default_factory=list)
+
+
 class GroundedAnswer(BaseModel):
     answer: str
     citations: list[Citation] = Field(default_factory=list)

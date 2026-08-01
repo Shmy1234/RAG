@@ -20,6 +20,27 @@ def test_settings_reject_missing_required_configuration(monkeypatch: pytest.Monk
         Settings(_env_file=None)
 
 
+def test_settings_reject_blank_required_configuration() -> None:
+    invalid_settings = VALID_SETTINGS | {"OPENAI_API_KEY": "   "}
+
+    with pytest.raises(ValidationError):
+        Settings(**invalid_settings, _env_file=None)
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("SUPABASE_URL", "project.supabase.co"),
+        ("DATABASE_URL", "https://db.project.supabase.co/postgres"),
+    ],
+)
+def test_settings_reject_invalid_urls(name: str, value: str) -> None:
+    invalid_settings = VALID_SETTINGS | {name: value}
+
+    with pytest.raises(ValidationError):
+        Settings(**invalid_settings, _env_file=None)
+
+
 def test_settings_parse_allowed_origins() -> None:
     settings = Settings(
         **VALID_SETTINGS,

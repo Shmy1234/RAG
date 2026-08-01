@@ -1,54 +1,44 @@
-import { useEffect, useState } from 'react'
+import { MessagesSquare, PanelLeft } from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 
-import { ChatThread as ChatThreadView } from '@/components/chat/ChatThread'
-import { ThreadSidebar } from '@/components/chat/ThreadSidebar'
-import { chatApi, type ChatThread } from '@/lib/chat-api'
+import { AppSidebar } from '@/components/app/AppSidebar'
+import { ChatThread } from '@/components/chat/ChatThread'
+import { describeError, type ErrorDescription } from '@/components/chat/chat-errors'
+import { EmptyState } from '@/components/common/EmptyState'
+import { ErrorNotice } from '@/components/common/ErrorNotice'
+import { Button } from '@/components/ui/button'
+import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar'
+import { chatApi, type ChatThread as ChatThreadRecord } from '@/lib/chat-api'
 
 export function ChatPage() {
   const { threadId } = useParams()
   const navigate = useNavigate()
-  const [threads, setThreads] = useState<ChatThread[]>([])
+  const [threads, setThreads] = useState<ChatThreadRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [creating, setCreating] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<ErrorDescription | null>(null)
 
-  async function refreshThreads() {
-    setError(null)
+  const refreshThreads = useCallback(async () => {
     try {
       setThreads(await chatApi.listThreads())
+      setError(null)
     } catch (unknownError) {
-      setError(unknownError instanceof Error ? unknownError.message : 'Failed to load chats')
+      setError(describeError(unknownError))
     }
-  }
-
-  async function createThread() {
-    setCreating(true)
-    setError(null)
-    try {
-      const thread = await chatApi.createThread(null)
-      setThreads((current) => [thread, ...current])
-      navigate(`/app/chats/${thread.id}`)
-    } catch (unknownError) {
-      setError(unknownError instanceof Error ? unknownError.message : 'Failed to create chat')
-    } finally {
-      setCreating(false)
-    }
-  }
+  }, [])
 
   useEffect(() => {
     let cancelled = false
 
     async function loadInitialThreads() {
       try {
-        const loadedThreads = await chatApi.listThreads()
+        const loaded = await chatApi.listThreads()
         if (cancelled) return
-        setThreads(loadedThreads)
+        setThreads(loaded)
         setError(null)
       } catch (unknownError) {
-        if (!cancelled) {
-          setError(unknownError instanceof Error ? unknownError.message : 'Failed to load chats')
-        }
+        if (!cancelled) setError(describeError(unknownError))
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -60,22 +50,68 @@ export function ChatPage() {
     }
   }, [])
 
+  async function createThread() {
+    setCreating(true)
+    try {
+      const thread = await chatApi.createThread(null)
+      setThreads((current) => [thread, ...current])
+      setError(null)
+      navigate(`/app/chats/${thread.id}`)
+    } catch (unknownError) {
+      setError(describeError(unknownError))
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  const activeThread = threads.find((thread) => thread.id === threadId)
+
   return (
-    <main className="flex h-screen bg-background text-foreground">
-      <ThreadSidebar threads={threads} creating={creating} onCreateThread={createThread} />
-      <section className="flex min-w-0 flex-1 flex-col">
-        {loading && threads.length === 0 ? (
-          <div className="p-6 text-sm text-muted-foreground">Loading chats...</div>
-        ) : error && threads.length === 0 ? (
-          <div className="p-6 text-sm text-destructive">{error}</div>
+    <SidebarProvider>
+      <AppSidebar
+        creating={creating}
+        loading={loading}
+        onCreateThread={() => void createThread()}
+        threads={threads}
+      />
+      <SidebarInset className="min-h-svh">
+        <header className="flex h-12 shrink-0 items-center gap-2 border-b px-3">
+          <SidebarTrigger />
+          <span className="min-w-0 truncate font-medium">
+            {activeThread?.title || (threadId ? 'New chat' : 'Document Copilot')}
+          </span>
+        </header>
+
+        {error && threads.length === 0 ? (
+          <div className="mx-auto w-full max-w-md p-6">
+            <ErrorNotice
+              description={error.description}
+              onRetry={error.canRetry ? () => void refreshThreads() : undefined}
+              title={error.title}
+              tone={error.tone}
+            />
+          </div>
         ) : threadId ? (
-          <ChatThreadView key={threadId} threadId={threadId} onMessageCommitted={refreshThreads} />
+          <ChatThread
+            hasTitle={Boolean(activeThread?.title)}
+            key={threadId}
+            onThreadChanged={refreshThreads}
+            threadId={threadId}
+          />
         ) : (
-          <div className="flex flex-1 items-center justify-center p-6 text-sm text-muted-foreground">
-            Create or select a chat.
+          <div className="flex min-h-0 flex-1 items-center justify-center">
+            <EmptyState
+              description="Pick a conversation from the sidebar, or start a new one to ask about the filing corpus."
+              icon={threads.length ? MessagesSquare : PanelLeft}
+              title={threads.length ? 'Select a chat' : 'No chats yet'}
+            >
+              <Button disabled={creating} onClick={() => void createThread()}>
+                New chat
+              </Button>
+            </EmptyState>
           </div>
         )}
-      </section>
-    </main>
+      </SidebarInset>
+    </SidebarProvider>
   )
 }

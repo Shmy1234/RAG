@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 from uuid import UUID
 
@@ -26,6 +26,10 @@ class CreateThreadRequest(BaseModel):
     title: str | None = Field(default=None, max_length=255)
 
 
+class UpdateThreadRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=255)
+
+
 class UIMessagePart(BaseModel):
     type: str
     text: str | None = None
@@ -41,3 +45,18 @@ class UIMessage(BaseModel):
 class StreamChatRequest(BaseModel):
     thread_id: UUID = Field(alias="threadId")
     messages: list[UIMessage] = Field(default_factory=list)
+
+
+class CitationSourceResponse(BaseModel):
+    chunk_id: UUID
+    citation_index: int
+    quoted_text: str
+    chunk_text: str
+    company_name: str
+    filing_type: str
+    filing_date: date
+    page_number: int | None
+    section: str | None
+    source_url: str
+    citation_label: str
+    location_label: str

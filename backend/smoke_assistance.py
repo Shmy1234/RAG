@@ -7,7 +7,7 @@ from uuid import uuid4
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
-from app.assistant.agent import document_agent
+from app.assistant.agent import agent_usage_limits, document_agent
 from app.assistant.deps import DocumentAgentDeps
 from app.config import settings
 from app.grounding.validator import GroundingValidator
@@ -46,7 +46,6 @@ async def run_query(query_key: str = "apple_revenue_mix") -> None:
 
     retriever = DocumentRetriever(session_factory=create_sessionmaker())
     validator = GroundingValidator()
-    passages = await retriever.retrieve(query, top_k=5, candidate_k=50, filters=filters)
     model = OpenAIChatModel(
         "gpt-4o-mini",
         provider=OpenAIProvider(api_key=settings.OPENAI_API_KEY),
@@ -56,15 +55,19 @@ async def run_query(query_key: str = "apple_revenue_mix") -> None:
         thread_id=uuid4(),
         retriever=retriever,
         grounding_validator=validator,
-        retrieved_passages=passages,
         retrieval_filters=filters,
     )
     result = await document_agent.run(
         query,
         deps=deps,
         model=model,
+        usage_limits=agent_usage_limits(),
     )
-    answer = validator.validate(result.output, deps.retrieved_passages)
+    answer = validator.validate(
+        result.output,
+        deps.retrieved_passages,
+        evidence_candidates=deps.evidence_candidates,
+    )
     print(format_answer(answer))
 
 

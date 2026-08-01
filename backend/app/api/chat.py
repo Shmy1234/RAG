@@ -5,19 +5,22 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 
 from app.assistant.agent import document_agent
+from app.assistant.deps import StageCallback
 from app.auth.dependencies import AuthenticatedUser, get_current_user
 from app.chat.orchestrator import run_chat_turn
 from app.chat.schemas import (
     ChatMessageResponse,
     ChatThreadResponse,
+    CitationSourceResponse,
     CreateThreadRequest,
     StreamChatRequest,
     UIMessage,
+    UpdateThreadRequest,
 )
-from app.chat.streaming import stream_grounded_answer
+from app.chat.streaming import stream_chat_turn
 from app.database.chats import ChatStore, ForbiddenThreadError, ThreadNotFoundError
 from app.database.supabase import create_service_role_client
-from app.grounding.validator import GroundingError, GroundingValidator
+from app.grounding.validator import GroundingValidator
 from app.retrieval.retriever import DocumentRetriever
 from ingest.repository import create_sessionmaker
 
@@ -78,6 +81,19 @@ async def create_thread(
     return await store.create_thread(user.id, request.title)
 
 
+@router.patch("/threads/{thread_id}", response_model=ChatThreadResponse)
+async def update_thread(
+    thread_id: UUID,
+    request: UpdateThreadRequest,
+    user: CurrentUser,
+    store: ChatStoreDependency,
+) -> dict[str, object]:
+    try:
+        return await store.update_thread_title(user.id, thread_id, request.title)
+    except (ThreadNotFoundError, ForbiddenThreadError) as error:
+        raise map_thread_error(error) from error
+
+
 @router.get("/threads/{thread_id}/messages", response_model=list[ChatMessageResponse])
 async def list_messages(
     thread_id: UUID,
@@ -88,6 +104,44 @@ async def list_messages(
         return await store.list_messages(user.id, thread_id)
     except (ThreadNotFoundError, ForbiddenThreadError) as error:
         raise map_thread_error(error) from error
+
+
+@router.get(
+    "/messages/{message_id}/citations/{citation_index}/source",
+    response_model=CitationSourceResponse,
+)
+async def get_citation_source(
+    message_id: UUID,
+    citation_index: int,
+    user: CurrentUser,
+    store: ChatStoreDependency,
+) -> dict[str, object]:
+    row = await store.get_citation_source(user.id, message_id, citation_index)
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Citation not found")
+    chunk = row["document_chunks"]
+    document = chunk["source_documents"]
+    page_number = chunk.get("page_number")
+    section = chunk.get("section")
+    location_parts = []
+    if page_number is not None:
+        location_parts.append(f"page {page_number}")
+    if section:
+        location_parts.append(section)
+    return {
+        "chunk_id": row["chunk_id"],
+        "citation_index": row["citation_index"],
+        "quoted_text": row["quoted_text"],
+        "chunk_text": chunk["text"],
+        "company_name": document["company_name"],
+        "filing_type": document["filing_type"],
+        "filing_date": document["filing_date"],
+        "page_number": page_number,
+        "section": section,
+        "source_url": document["source_url"],
+        "citation_label": f"{document['ticker']} {document['filing_type']}",
+        "location_label": ", ".join(location_parts) or "unknown location",
+    }
 
 
 def latest_user_text(messages: list[UIMessage]) -> str:
@@ -117,8 +171,9 @@ async def stream_chat(
         raise map_thread_error(error) from error
 
     user_text = latest_user_text(request.messages)
-    try:
-        answer = await run_chat_turn(
+
+    async def run_turn(on_stage: StageCallback):
+        return await run_chat_turn(
             user_id=user.id,
             thread_id=request.thread_id,
             user_text=user_text,
@@ -126,15 +181,14 @@ async def stream_chat(
             agent_runner=agent_runner,
             retriever=retriever,
             grounding_validator=grounding_validator,
+            on_stage=on_stage,
         )
-    except GroundingError as error:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="The assistant answer could not be grounded in retrieved evidence.",
-        ) from error
 
+    # Auth and ownership already failed as HTTP above. Everything from here runs
+    # inside the stream so the client sees real stage progress, and failures
+    # arrive as typed data-error parts rather than a dead connection.
     return StreamingResponse(
-        stream_grounded_answer(answer),
+        stream_chat_turn(run_turn),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

@@ -1,8 +1,12 @@
-import { useState } from 'react'
-import type { FormEvent } from 'react'
+import { FileText } from 'lucide-react'
+import { useState, type FormEvent } from 'react'
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
 
 import { useAuth } from '@/auth/auth-context'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 
 export function AuthPage({ mode }: { mode: 'sign-in' | 'sign-up' }) {
   const isSignIn = mode === 'sign-in'
@@ -15,9 +19,7 @@ export function AuthPage({ mode }: { mode: 'sign-in' | 'sign-up' }) {
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
-  if (session) {
-    return <Navigate to="/app" replace />
-  }
+  if (session) return <Navigate replace to="/app" />
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -26,31 +28,88 @@ export function AuthPage({ mode }: { mode: 'sign-in' | 'sign-up' }) {
     setSubmitting(true)
     const result = isSignIn ? await signIn(email, password) : await signUp(email, password)
     setSubmitting(false)
+
     if (result.error) {
       setError(result.error.message)
       return
     }
     if (isSignIn || ('session' in result && result.session)) {
       navigate((location.state as { from?: string } | null)?.from ?? '/app', { replace: true })
-    } else {
-      setMessage('Check your email to confirm your account before signing in.')
+      return
     }
+    setMessage('Check your email to confirm your account, then sign in.')
   }
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-md items-center px-6">
-      <section className="w-full rounded-2xl border bg-card p-8 text-left shadow-sm">
-        <p className="mb-2 text-sm text-muted-foreground">Document Copilot</p>
-        <h1 className="mb-6 text-3xl font-semibold">{isSignIn ? 'Welcome back' : 'Create your account'}</h1>
-        <form className="space-y-4" onSubmit={handleSubmit}>
-          <label className="block text-sm font-medium">Email<input className="mt-1 w-full rounded-lg border px-3 py-2" type="email" required value={email} onChange={(event) => setEmail(event.target.value)} /></label>
-          <label className="block text-sm font-medium">Password<input className="mt-1 w-full rounded-lg border px-3 py-2" type="password" minLength={6} required value={password} onChange={(event) => setPassword(event.target.value)} /></label>
-          {error && <p className="text-sm text-destructive" role="alert">{error}</p>}
-          {message && <p className="text-sm text-muted-foreground" role="status">{message}</p>}
-          <button className="w-full rounded-lg bg-primary px-4 py-2 text-primary-foreground disabled:opacity-50" disabled={submitting} type="submit">{submitting ? 'Working…' : isSignIn ? 'Sign in' : 'Sign up'}</button>
-        </form>
-        <p className="mt-6 text-sm text-muted-foreground">{isSignIn ? "Don't have an account? " : 'Already have an account? '}<Link className="underline" to={isSignIn ? '/sign-up' : '/sign-in'}>{isSignIn ? 'Sign up' : 'Sign in'}</Link></p>
-      </section>
+    <main className="flex min-h-svh items-center justify-center px-6 py-12">
+      <div className="w-full max-w-sm">
+        <div className="mb-6 flex items-center gap-2">
+          <div className="flex size-8 items-center justify-center rounded-md bg-primary text-primary-foreground">
+            <FileText className="size-4" />
+          </div>
+          <span className="font-medium">Document Copilot</span>
+        </div>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>{isSignIn ? 'Sign in' : 'Create your account'}</CardTitle>
+            <CardDescription>
+              {isSignIn
+                ? 'Use your work email to reach the filing corpus.'
+                : 'Use your work email. Analysts only.'}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form className="space-y-4" onSubmit={handleSubmit}>
+              <div className="space-y-1.5">
+                <Label htmlFor="email">Email</Label>
+                <Input
+                  autoComplete="email"
+                  id="email"
+                  onChange={(event) => setEmail(event.target.value)}
+                  required
+                  type="email"
+                  value={email}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="password">Password</Label>
+                <Input
+                  autoComplete={isSignIn ? 'current-password' : 'new-password'}
+                  id="password"
+                  minLength={6}
+                  onChange={(event) => setPassword(event.target.value)}
+                  required
+                  type="password"
+                  value={password}
+                />
+              </div>
+
+              {error ? (
+                <p className="text-destructive" role="alert">
+                  {error}
+                </p>
+              ) : null}
+              {message ? (
+                <p className="text-muted-foreground" role="status">
+                  {message}
+                </p>
+              ) : null}
+
+              <Button className="w-full" disabled={submitting} type="submit">
+                {submitting ? 'Working…' : isSignIn ? 'Sign in' : 'Create account'}
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+
+        <p className="mt-4 text-center text-muted-foreground">
+          {isSignIn ? "Don't have an account? " : 'Already have an account? '}
+          <Link className="underline underline-offset-2" to={isSignIn ? '/sign-up' : '/sign-in'}>
+            {isSignIn ? 'Create one' : 'Sign in'}
+          </Link>
+        </p>
+      </div>
     </main>
   )
 }
