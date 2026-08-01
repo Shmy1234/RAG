@@ -89,6 +89,7 @@ Thumbs.db
 *.sw?
 
 # Deployment and local tool state
+.worktrees/
 .railway/
 .vercel/
 .netlify/
