@@ -31,7 +31,11 @@ def test_chunk_reference_carries_citation_metadata():
         fiscal_year=2025,
         accession_number="0000320193-25-000079",
         source_url="https://www.sec.gov/example",
+        kind="table",
+        table_title="Net Sales",
+        table_units="USD millions",
     )
 
     assert chunk.citation_label == "AAPL 10-K 2025"
     assert chunk.location_label == "page 42, Management's Discussion and Analysis"
+    assert chunk.table_title == "Net Sales"

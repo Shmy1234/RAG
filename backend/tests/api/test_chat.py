@@ -292,6 +292,11 @@ async def test_citation_source_normalizes_neighbor_chunk_ids(user):
                     "text": "Services revenue increased.",
                     "page_number": 42,
                     "section": "Results",
+                    "kind": "table",
+                    "row_start": 4,
+                    "row_end": 4,
+                    "source_locator": {"html_id": "sales"},
+                    "document_tables": {"title": "Net Sales", "units": "USD millions"},
                     "source_documents": {
                         "ticker": "AAPL",
                         "company_name": "Apple Inc.",
@@ -323,3 +328,6 @@ async def test_citation_source_normalizes_neighbor_chunk_ids(user):
 
     assert response.status_code == status.HTTP_200_OK
     assert response.json()["previous_chunks"][0]["chunk_id"] == str(neighbor_id)
+    assert response.json()["kind"] == "table"
+    assert response.json()["table_title"] == "Net Sales"
+    assert response.json()["table_units"] == "USD millions"

@@ -34,6 +34,12 @@ export type CitationSource = Citation & {
   page_number: number | null
   section: string | null
   source_url: string
+  kind: 'narrative' | 'table'
+  table_title: string | null
+  table_units: string | null
+  row_start: number | null
+  row_end: number | null
+  source_locator: Record<string, unknown>
   previous_chunks: CitationChunk[]
   next_chunks: CitationChunk[]
 }
@@ -44,6 +50,7 @@ export type CitationChunk = {
   text: string
   page_number: number | null
   section: string | null
+  kind: 'narrative' | 'table'
 }
 
 /** Stage identifiers streamed by the backend. Copy is owned by the frontend. */

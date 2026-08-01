@@ -49,6 +49,32 @@ class SourceDocument(Base):
     chunks: Mapped[list["DocumentChunk"]] = relationship(
         back_populates="document", cascade="all, delete-orphan"
     )
+    tables: Mapped[list["DocumentTable"]] = relationship(
+        back_populates="document", cascade="all, delete-orphan"
+    )
+
+
+class DocumentTable(Base):
+    __tablename__ = "document_tables"
+    __table_args__ = (UniqueConstraint("document_id", "table_index"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    document_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("source_documents.id", ondelete="CASCADE"), index=True
+    )
+    table_index: Mapped[int] = mapped_column(Integer)
+    title: Mapped[str | None] = mapped_column(Text)
+    section: Mapped[str | None] = mapped_column(Text)
+    units: Mapped[str | None] = mapped_column(String(100))
+    columns: Mapped[list[object]] = mapped_column(JSONB, default=list)
+    rows: Mapped[list[object]] = mapped_column(JSONB, default=list)
+    footnotes: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    source_locator: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    validation: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    document: Mapped[SourceDocument] = relationship(back_populates="tables")
+    chunks: Mapped[list["DocumentChunk"]] = relationship(back_populates="table")
 
 
 class DocumentChunk(Base):
@@ -75,13 +101,18 @@ class DocumentChunk(Base):
         ForeignKey("source_documents.id", ondelete="CASCADE"), index=True
     )
     chunk_index: Mapped[int] = mapped_column(Integer)
+    kind: Mapped[str] = mapped_column(String(20), default="narrative")
+    table_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("document_tables.id", ondelete="CASCADE"), index=True
+    )
+    row_start: Mapped[int | None] = mapped_column(Integer)
+    row_end: Mapped[int | None] = mapped_column(Integer)
+    source_locator: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     page_number: Mapped[int | None] = mapped_column(Integer)
     section: Mapped[str | None] = mapped_column(String(255))
     text: Mapped[str] = mapped_column(Text)
     token_count: Mapped[int] = mapped_column(Integer)
-    chunk_metadata: Mapped[dict[str, Any]] = mapped_column(
-        "metadata", JSONB, server_default="{}"
-    )
+    chunk_metadata: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB, server_default="{}")
     embedding: Mapped[list[float] | None] = mapped_column(Vector(1536))
     search_vector: Mapped[str] = mapped_column(
         TSVECTOR,
@@ -92,6 +123,7 @@ class DocumentChunk(Base):
     )
 
     document: Mapped[SourceDocument] = relationship(back_populates="chunks")
+    table: Mapped[DocumentTable | None] = relationship(back_populates="chunks")
     citations: Mapped[list["MessageCitation"]] = relationship(back_populates="chunk")
 
 
