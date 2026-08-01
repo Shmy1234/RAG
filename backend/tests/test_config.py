@@ -10,6 +10,7 @@ VALID_SETTINGS = {
     "DATABASE_URL": "postgresql://postgres:password@db.project.supabase.co:5432/postgres",
     "OPENAI_API_KEY": "test-openai-key",
     "OPENAI_CHAT_MODEL": "openai:gpt-5-mini",
+    "OPENAI_FAST_MODEL": "openai:gpt-5-mini",
 }
 
 
@@ -38,6 +39,16 @@ def test_settings_requires_chat_model(monkeypatch: pytest.MonkeyPatch) -> None:
         Settings(**settings_without_chat_model, _env_file=None)
 
 
+def test_settings_requires_fast_model(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("OPENAI_FAST_MODEL")
+    settings_without_fast_model = {
+        name: value for name, value in VALID_SETTINGS.items() if name != "OPENAI_FAST_MODEL"
+    }
+
+    with pytest.raises(ValidationError, match="OPENAI_FAST_MODEL"):
+        Settings(**settings_without_fast_model, _env_file=None)
+
+
 def test_settings_rejects_blank_chat_model() -> None:
     invalid_settings = VALID_SETTINGS | {"OPENAI_CHAT_MODEL": "   "}
 
@@ -47,6 +58,13 @@ def test_settings_rejects_blank_chat_model() -> None:
 
 def test_settings_rejects_non_openai_chat_model() -> None:
     invalid_settings = VALID_SETTINGS | {"OPENAI_CHAT_MODEL": "anthropic:claude"}
+
+    with pytest.raises(ValidationError, match="must start with 'openai:'"):
+        Settings(**invalid_settings, _env_file=None)
+
+
+def test_settings_rejects_non_openai_fast_model() -> None:
+    invalid_settings = VALID_SETTINGS | {"OPENAI_FAST_MODEL": "anthropic:claude"}
 
     with pytest.raises(ValidationError, match="must start with 'openai:'"):
         Settings(**invalid_settings, _env_file=None)
