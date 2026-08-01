@@ -14,9 +14,8 @@ ModelChatRoute = Literal["direct", "quick_rag", "deep_rag"]
 
 ROUTING_INSTRUCTIONS = """You route requests for an SEC filing research assistant.
 
-Choose direct only for conversation, product guidance, or transformations and explanations based
-entirely on text supplied in the request. When choosing direct, provide the concise final answer in
-the answer field.
+Choose direct only for guidance about how to use this product and its filing-research features.
+When choosing direct, provide the concise final answer in the answer field.
 
 Choose quick_rag for a focused company or filing question likely answerable with one corpus search.
 Choose deep_rag for comparisons, multi-part synthesis, longitudinal analysis, broad summaries, or
@@ -36,12 +35,6 @@ _SAFE_DIRECT_PATTERNS = tuple(
             r"how can you help(?: me)?|how do i use (?:this|the) (?:app|workspace)|"
             r"help me use (?:this|the) (?:app|workspace))\??$"
         ),
-        (
-            r"^(?:rewrite|rephrase|proofread|edit|translate|summarize|explain) "
-            r"(?:this|the following)(?: text| passage)?\s*[:\-]\s*\S+"
-        ),
-        r"^(?:draft|write) (?:an? )?(?:email|message|outline|template)\b",
-        r"^(?:tell me a joke|brainstorm\b|help me phrase\b)",
     )
 )
 _INSTANT_RESPONSES = {
