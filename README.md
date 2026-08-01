@@ -244,7 +244,11 @@ The database model includes:
 
 Supabase/Postgres-specific features such as `vector`, HNSW indexes, GIN indexes, generated search vectors, and RLS policies belong in explicit migration operations.
 
-## Local Development
+## Running locally
+
+These commands assume a fresh checkout and can be copied as written. Secrets stay
+in the ignored `.env` files; never put the service-role key, database URL, or
+OpenAI key in `frontend/.env`.
 
 ### Prerequisites
 
@@ -254,14 +258,40 @@ Supabase/Postgres-specific features such as `vector`, HNSW indexes, GIN indexes,
 - Supabase project
 - OpenAI API key
 
-### Backend Setup
+### 1. Configure the backend
 
 ```bash
 cd backend
 cp .env.example .env
+```
+
+Edit `backend/.env` and set every placeholder below:
+
+```text
+SUPABASE_URL=https://your-project-ref.supabase.co
+SUPABASE_ANON_KEY=your-anon-public-key
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-secret-key
+DATABASE_URL=postgresql://postgres:your-password@db.your-project-ref.supabase.co:5432/postgres
+OPENAI_API_KEY=sk-your-openai-api-key
+OPENAI_CHAT_MODEL=openai:gpt-5-mini
+OPENAI_EMBEDDING_MODEL=text-embedding-3-small
+OPENAI_EMBEDDING_DIMENSIONS=1536
+ALLOWED_ORIGINS=http://localhost:5173
+```
+
+Install, migrate, and start the API:
+
+```bash
+cd backend
 uv sync
 uv run alembic upgrade head
 uv run uvicorn app.main:app --reload
+```
+
+Verify it from another terminal:
+
+```bash
+curl http://localhost:8000/health
 ```
 
 Backend environment variables:
@@ -278,14 +308,31 @@ Backend environment variables:
 | `OPENAI_EMBEDDING_DIMENSIONS` | Embedding dimension count, default `1536` |
 | `ALLOWED_ORIGINS` | Comma-separated CORS origins |
 
-### Frontend Setup
+### 2. Configure the frontend
 
 ```bash
 cd frontend
 cp .env.example .env
+```
+
+Edit `frontend/.env` with browser-safe values only:
+
+```text
+VITE_API_BASE_URL=http://localhost:8000
+VITE_SUPABASE_URL=https://your-project-ref.supabase.co
+VITE_SUPABASE_ANON_KEY=your-anon-public-key
+```
+
+Install and start the SPA:
+
+```bash
+cd frontend
 pnpm install
 pnpm dev
 ```
+
+Open `http://localhost:5173`, create an email account, and sign in. If Supabase
+email confirmation is enabled, confirm the address before signing in.
 
 Frontend environment variables:
 
@@ -294,6 +341,65 @@ Frontend environment variables:
 | `VITE_API_BASE_URL` | FastAPI backend URL |
 | `VITE_SUPABASE_URL` | Supabase project URL |
 | `VITE_SUPABASE_ANON_KEY` | Browser-safe Supabase anon key |
+
+### 3. Load or update the filing corpus
+
+Set `USER_AGENT` in `data/download.py` to a real contact address before making
+SEC requests. From the repository root, download the configured filings and
+regenerate normalized Markdown:
+
+```bash
+uv run data/download.py
+uv run --directory backend python ../data/html_to_markdown/convert_html_to_markdown.py --overwrite
+uv run --directory backend document-copilot-ingest --dry-run
+```
+
+Review the dry-run document/chunk counts and missing metadata. New accessions are
+safe to upload idempotently; already-ingested accessions are skipped:
+
+```bash
+uv run --directory backend document-copilot-ingest --upload --yes
+```
+
+If conversion or chunking changed for an accession already in the database,
+replace its document and chunks atomically:
+
+```bash
+uv run --directory backend document-copilot-ingest --upload --replace --yes
+```
+
+`--replace` regenerates embeddings and deletes/recreates matching accession rows,
+so run the dry-run first. Use `--limit-documents 1 --limit-chunks 1` for the first
+paid/database write in a new environment.
+
+### 4. Run pilot checks
+
+Run local checks with no database or network access:
+
+```bash
+cd backend
+uv run pytest -m "not integration"
+uv run ruff check .
+
+cd ../frontend
+pnpm lint
+pnpm build
+```
+
+With the configured Supabase corpus and OpenAI account available, verify the live
+schema/retrieval path and then run all ten client-brief questions. The JSON report
+records model, total latency, time to the first live stage, answer, and citations
+for every question:
+
+```bash
+cd backend
+RUN_RETRIEVAL_INTEGRATION=1 uv run pytest tests/integration/test_live_system.py
+uv run python smoke_assistance.py --output pilot-smoke-report.json
+```
+
+Review every answer in `pilot-smoke-report.json`; a smoke run is accepted only if
+each factual answer has usable citations and question 10 refuses to claim that
+generative AI caused margin improvement beyond what the filings establish.
 
 ## Quality Checks
 

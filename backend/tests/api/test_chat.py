@@ -250,3 +250,76 @@ async def test_messages_returns_forbidden_for_another_users_thread(user, store):
         response = await client.get(f"/chat/threads/{store.thread_id}/messages")
 
     assert response.status_code == status.HTTP_403_FORBIDDEN
+
+
+@pytest.mark.anyio
+async def test_history_survives_a_new_http_client_session(user, store):
+    async def override_user():
+        return user
+
+    app.dependency_overrides[get_current_user] = override_user
+    app.dependency_overrides[get_chat_store] = lambda: store
+    await store.create_thread(user.id, "Persistent")
+    await store.append_message(store.thread_id, "user", "What changed?", {})
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as first:
+        initial = await first.get(f"/chat/threads/{store.thread_id}/messages")
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as resumed:
+        reloaded = await resumed.get(f"/chat/threads/{store.thread_id}/messages")
+
+    assert initial.status_code == status.HTTP_200_OK
+    assert reloaded.json() == initial.json()
+
+
+@pytest.mark.anyio
+async def test_citation_source_normalizes_neighbor_chunk_ids(user):
+    message_id = uuid4()
+    chunk_id = uuid4()
+    neighbor_id = uuid4()
+
+    class CitationStore:
+        async def get_citation_source(self, user_id, requested_message_id, citation_index):
+            assert user_id == user.id
+            assert requested_message_id == message_id
+            assert citation_index == 0
+            return {
+                "chunk_id": str(chunk_id),
+                "citation_index": 0,
+                "quoted_text": "Services revenue increased.",
+                "document_chunks": {
+                    "id": str(chunk_id),
+                    "chunk_index": 2,
+                    "text": "Services revenue increased.",
+                    "page_number": 42,
+                    "section": "Results",
+                    "source_documents": {
+                        "ticker": "AAPL",
+                        "company_name": "Apple Inc.",
+                        "filing_type": "10-K",
+                        "filing_date": "2025-10-31",
+                        "source_url": "https://www.sec.gov/example",
+                    },
+                },
+                "previous_chunks": [
+                    {
+                        "id": str(neighbor_id),
+                        "chunk_index": 1,
+                        "text": "Prior context.",
+                        "page_number": 41,
+                        "section": "Results",
+                    }
+                ],
+                "next_chunks": [],
+            }
+
+    async def override_user():
+        return user
+
+    app.dependency_overrides[get_current_user] = override_user
+    app.dependency_overrides[get_chat_store] = lambda: CitationStore()
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get(f"/chat/messages/{message_id}/citations/0/source")
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["previous_chunks"][0]["chunk_id"] == str(neighbor_id)

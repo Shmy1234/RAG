@@ -58,6 +58,16 @@ def map_thread_error(error: Exception) -> HTTPException:
     raise error
 
 
+def _citation_chunk_response(chunk: dict[str, object]) -> dict[str, object]:
+    return {
+        "chunk_id": chunk["id"],
+        "chunk_index": chunk["chunk_index"],
+        "text": chunk["text"],
+        "page_number": chunk.get("page_number"),
+        "section": chunk.get("section"),
+    }
+
+
 @router.get("/threads", response_model=list[ChatThreadResponse])
 async def list_threads(
     user: CurrentUser,
@@ -142,8 +152,10 @@ async def get_citation_source(
         "source_url": document["source_url"],
         "citation_label": f"{document['ticker']} {document['filing_type']}",
         "location_label": ", ".join(location_parts) or "unknown location",
-        "previous_chunks": row["previous_chunks"],
-        "next_chunks": row["next_chunks"],
+        "previous_chunks": [
+            _citation_chunk_response(item) for item in row["previous_chunks"]
+        ],
+        "next_chunks": [_citation_chunk_response(item) for item in row["next_chunks"]],
     }
 
 

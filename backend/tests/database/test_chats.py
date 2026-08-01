@@ -1,3 +1,4 @@
+import asyncio
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
@@ -207,4 +208,27 @@ async def test_chat_store_persists_grounded_answer_with_one_atomic_rpc(ids) -> N
                 "p_citations": citations,
             },
         )
+    ]
+
+
+@pytest.mark.anyio
+async def test_chat_store_isolates_threads_for_forty_users() -> None:
+    users = [uuid4() for _ in range(40)]
+    rows = [
+        {
+            "id": str(uuid4()),
+            "user_id": str(user_id),
+            "title": f"Analyst {index}",
+            "updated_at": f"2026-01-01T00:{index:02d}:00+00:00",
+        }
+        for index, user_id in enumerate(users)
+    ]
+    store = ChatStore(FakeClient({"chat_threads": rows}))
+
+    results = await asyncio.gather(*(store.list_threads(user_id) for user_id in users))
+
+    assert len(results) == 40
+    assert all(len(threads) == 1 for threads in results)
+    assert [threads[0]["title"] for threads in results] == [
+        f"Analyst {index}" for index in range(40)
     ]

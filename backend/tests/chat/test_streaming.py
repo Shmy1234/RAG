@@ -116,3 +116,22 @@ def test_stream_chat_turn_logs_unexpected_failure_with_traceback(monkeypatch):
             {"error_code": "processing_failed", "stage": "searching"},
         )
     ]
+
+
+def test_stream_opens_before_slow_turn_work_completes():
+    async def verify():
+        release = asyncio.Event()
+
+        async def run_turn(on_stage):
+            await release.wait()
+            return GroundedAnswer(answer="Finished.")
+
+        stream = stream_chat_turn(run_turn)
+        first = await asyncio.wait_for(anext(stream), timeout=0.1)
+        release.set()
+        await stream.aclose()
+        return first
+
+    first = asyncio.run(verify())
+
+    assert first == 'data: {"type": "start", "messageId": "assistant-message"}\n\n'

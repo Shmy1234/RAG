@@ -3,8 +3,6 @@ Setup:
 2. Gather data —> uv run download.py 
 - Setup Supabase: 
     - anon -> pushlisable key 
-    - url -> 
-
 
 3. Create todos.md and ai todos of what to do in app
 - phases and checklists 

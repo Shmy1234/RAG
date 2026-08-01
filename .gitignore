@@ -76,6 +76,7 @@ data/**/*.db
 !data/html_to_markdown/test_convert_html_to_markdown.py
 
 # OS and editor files
+prompt-steps.txt 
 .DS_Store
 Thumbs.db
 .vscode/*
