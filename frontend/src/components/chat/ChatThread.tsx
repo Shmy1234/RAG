@@ -24,7 +24,7 @@ import {
 } from '@/components/chat/chat-errors'
 import {
   messageErrorCode,
-  messageStage,
+  messageStages,
   messageText,
   toInitialChatMessage,
   type InitialChatMessage,
@@ -112,7 +112,7 @@ export function ChatThread({ threadId, hasTitle, onThreadChanged }: ChatThreadPr
   const streamErrorCode = lastMessage ? messageErrorCode(lastMessage) : null
   const activeError =
     sendError ?? (streamErrorCode ? describeStreamError(streamErrorCode) : null) ?? historyError
-  const stage = busy && lastMessage?.role === 'assistant' ? messageStage(lastMessage) : null
+  const stages = busy && lastMessage?.role === 'assistant' ? messageStages(lastMessage) : []
 
   return (
     <div className="flex min-h-0 flex-1">
@@ -161,7 +161,7 @@ export function ChatThread({ threadId, hasTitle, onThreadChanged }: ChatThreadPr
                   ),
                 )}
 
-                {busy ? <RunStatus stage={stage} /> : null}
+                {busy ? <RunStatus stages={stages} /> : null}
 
                 {activeError ? (
                   <ErrorNotice

@@ -53,16 +53,16 @@ function isRunStage(value: unknown): value is RunStage {
   return RUN_STAGES.includes(value as RunStage)
 }
 
-/** Latest stage reported by the server, or null when none has arrived yet. */
-export function messageStage(message: { parts: ReadonlyArray<unknown> }): RunStage | null {
-  let stage: RunStage | null = null
+/** Unique stages reported by the server, in arrival order. */
+export function messageStages(message: { parts: ReadonlyArray<unknown> }): RunStage[] {
+  const stages: RunStage[] = []
   for (const part of message.parts) {
     const data = partData(part, 'data-status')
     if (typeof data !== 'object' || data === null) continue
     const candidate = (data as { stage?: unknown }).stage
-    if (isRunStage(candidate)) stage = candidate
+    if (isRunStage(candidate) && !stages.includes(candidate)) stages.push(candidate)
   }
-  return stage
+  return stages
 }
 
 export function messageErrorCode(message: {

@@ -47,7 +47,7 @@ export type CitationChunk = {
 }
 
 /** Stage identifiers streamed by the backend. Copy is owned by the frontend. */
-export const RUN_STAGES = ['searching', 'analyzing', 'validating', 'saving'] as const
+export const RUN_STAGES = ['routing', 'searching', 'analyzing', 'validating', 'saving'] as const
 export type RunStage = (typeof RUN_STAGES)[number]
 
 export const STREAM_ERROR_CODES = [

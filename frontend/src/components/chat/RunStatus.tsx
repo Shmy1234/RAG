@@ -1,29 +1,29 @@
 import { Check } from 'lucide-react'
 
-import { RUN_STAGES, type RunStage } from '@/lib/chat-api'
+import type { RunStage } from '@/lib/chat-api'
 import { cn } from '@/lib/utils'
 
 type RunStatusProps = {
-  stage: RunStage | null
+  stages: readonly RunStage[]
 }
 
 /** Copy lives here, not on the wire: the backend sends identifiers only. */
 const labels: Record<RunStage, string> = {
+  routing: 'Choosing the fastest answer path',
   searching: 'Searching filings',
   analyzing: 'Reading the evidence',
   validating: 'Checking every citation',
   saving: 'Saving the answer',
 }
 
-export function RunStatus({ stage }: RunStatusProps) {
-  const current = stage ? RUN_STAGES.indexOf(stage) : -1
+export function RunStatus({ stages }: RunStatusProps) {
+  const current = stages.length - 1
 
   return (
     <div aria-live="polite" className="flex flex-wrap items-center gap-x-3 gap-y-1" role="status">
-      {RUN_STAGES.map((item, index) => {
+      {stages.map((item, index) => {
         const done = index < current
         const active = index === current
-        if (!done && !active) return null
 
         return (
           <span
@@ -45,7 +45,9 @@ export function RunStatus({ stage }: RunStatusProps) {
           </span>
         )
       })}
-      {current === -1 ? <span className="text-[0.8125rem] text-muted-foreground">Working…</span> : null}
+      {stages.length === 0 ? (
+        <span className="text-[0.8125rem] text-muted-foreground">Working…</span>
+      ) : null}
     </div>
   )
 }
