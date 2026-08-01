@@ -6,6 +6,7 @@ TEST_ENVIRONMENT = {
     "SUPABASE_SERVICE_ROLE_KEY": "service-role-key",
     "DATABASE_URL": "postgresql://postgres:password@db.project.supabase.co:5432/postgres",
     "OPENAI_API_KEY": "test-openai-key",
+    "OPENAI_CHAT_MODEL": "openai:gpt-5-mini",
     "ALLOWED_ORIGINS": "http://localhost:5173",
 }
 

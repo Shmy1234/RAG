@@ -273,6 +273,7 @@ Backend environment variables:
 | `SUPABASE_SERVICE_ROLE_KEY` | Backend-only privileged Supabase key |
 | `DATABASE_URL` | Direct Supabase Postgres connection string for Alembic/app DB access |
 | `OPENAI_API_KEY` | OpenAI API key for embeddings and generation |
+| `OPENAI_CHAT_MODEL` | PydanticAI chat model identifier, for example `openai:gpt-5-mini` |
 | `OPENAI_EMBEDDING_MODEL` | Embedding model, default `text-embedding-3-small` |
 | `OPENAI_EMBEDDING_DIMENSIONS` | Embedding dimension count, default `1536` |
 | `ALLOWED_ORIGINS` | Comma-separated CORS origins |
@@ -346,6 +347,7 @@ SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
 DATABASE_URL=
 OPENAI_API_KEY=
+OPENAI_CHAT_MODEL=openai:gpt-5-mini
 OPENAI_EMBEDDING_MODEL=text-embedding-3-small
 OPENAI_EMBEDDING_DIMENSIONS=1536
 ALLOWED_ORIGINS=https://your-frontend-domain

@@ -48,7 +48,7 @@
 - Consumes: `OPENAI_API_KEY`, already validated by `app.config.Settings`.
 - Guarantees: `document_agent.model` is not `None` in production wiring; offline tests continue to override it with `TestModel` and make no network calls.
 
-- [ ] **Step 1: Write failing configuration tests**
+- [x] **Step 1: Write failing configuration tests**
 
 Add tests proving that `OPENAI_CHAT_MODEL` is required and cannot be blank:
 
@@ -67,13 +67,13 @@ def test_settings_rejects_blank_chat_model(valid_environment):
         Settings(_env_file=None, **valid_environment)
 ```
 
-- [ ] **Step 2: Run the focused configuration tests and confirm failure**
+- [x] **Step 2: Run the focused configuration tests and confirm failure**
 
 Run: `cd backend && uv run pytest tests/test_config.py -q`
 
 Expected: FAIL because `Settings` does not define or require `OPENAI_CHAT_MODEL`.
 
-- [ ] **Step 3: Add fail-fast chat model configuration**
+- [x] **Step 3: Add fail-fast chat model configuration**
 
 Add the required setting and include it in the existing non-empty validator:
 
@@ -92,7 +92,7 @@ OPENAI_CHAT_MODEL=openai:gpt-5-mini
 
 The value must include the provider prefix expected by PydanticAI. Do not silently default production to an unspecified model.
 
-- [ ] **Step 4: Bind the configured model to the production agent**
+- [x] **Step 4: Bind the configured model to the production agent**
 
 Update the agent construction:
 
@@ -111,7 +111,7 @@ document_agent = Agent(
 
 Do not pass the embedding model to `Agent`; chat generation and embeddings are separate configuration contracts.
 
-- [ ] **Step 5: Add a production-wiring regression test**
+- [x] **Step 5: Add a production-wiring regression test**
 
 Add an offline assertion that catches the exact regression without calling OpenAI:
 
@@ -122,11 +122,11 @@ def test_document_agent_has_production_model():
 
 Keep the existing typed-output test using `model=TestModel(...)` so it remains network-free.
 
-- [ ] **Step 6: Add a controlled real-agent smoke test**
+- [x] **Step 6: Add a controlled real-agent smoke test**
 
 Update `backend/smoke_assistance.py` and its test so the live path uses the same configured `document_agent` as `POST /chat/stream`. The scripted smoke test must report the selected model identifier, submit one bounded question, and fail with a non-zero exit code if model execution, retrieval, grounding, or persistence fails. It must not print API keys, database credentials, or service-role credentials.
 
-- [ ] **Step 7: Run offline verification**
+- [x] **Step 7: Run offline verification**
 
 Run:
 
@@ -144,7 +144,7 @@ Run the documented smoke command only when valid OpenAI and Supabase credentials
 
 Expected: the configured chat model executes, invokes bounded filing retrieval, returns a grounded result or an explicit insufficient-evidence result, and does not emit `processing_failed` because of missing model configuration.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add backend/.env.example backend/app/config.py backend/app/assistant/agent.py backend/smoke_assistance.py backend/tests/test_config.py backend/tests/assistant/test_agent.py backend/tests/test_smoke_assistance.py docs/superpowers/plans/2026-08-01-phase-6-agent-grounding.md

@@ -66,6 +66,10 @@ class FakeValidator:
         return answer
 
 
+def test_document_agent_has_production_model():
+    assert document_agent.model is not None
+
+
 def test_document_agent_returns_typed_output_and_exposes_search_tool():
     evidence = candidate(chunk())
     expected = {

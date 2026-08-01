@@ -4,11 +4,9 @@ import asyncio
 import json
 from uuid import uuid4
 
-from pydantic_ai.models.openai import OpenAIChatModel
-from pydantic_ai.providers.openai import OpenAIProvider
-
 from app.assistant.agent import agent_usage_limits, document_agent
 from app.assistant.deps import DocumentAgentDeps
+from app.chat.orchestrator import AgentRunner
 from app.config import settings
 from app.grounding.validator import GroundingValidator
 from app.retrieval.retriever import DocumentRetriever
@@ -40,27 +38,29 @@ def format_answer(answer) -> str:
     )
 
 
-async def run_query(query_key: str = "apple_revenue_mix") -> None:
+async def run_query(
+    query_key: str = "apple_revenue_mix",
+    *,
+    agent_runner: AgentRunner | None = None,
+    retriever: DocumentRetriever | None = None,
+) -> None:
     query = USER_QUERIES[query_key]
     filters = QUERY_FILTERS[query_key]
 
-    retriever = DocumentRetriever(session_factory=create_sessionmaker())
+    runner = agent_runner or document_agent
+    active_retriever = retriever or DocumentRetriever(session_factory=create_sessionmaker())
     validator = GroundingValidator()
-    model = OpenAIChatModel(
-        "gpt-4o-mini",
-        provider=OpenAIProvider(api_key=settings.OPENAI_API_KEY),
-    )
     deps = DocumentAgentDeps(
         user_id=uuid4(),
         thread_id=uuid4(),
-        retriever=retriever,
+        retriever=active_retriever,
         grounding_validator=validator,
         retrieval_filters=filters,
     )
-    result = await document_agent.run(
+    print(f"model={settings.OPENAI_CHAT_MODEL}")
+    result = await runner.run(
         query,
         deps=deps,
-        model=model,
         usage_limits=agent_usage_limits(),
     )
     answer = validator.validate(

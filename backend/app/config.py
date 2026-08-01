@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     SUPABASE_SERVICE_ROLE_KEY: str
     DATABASE_URL: str
     OPENAI_API_KEY: str
+    OPENAI_CHAT_MODEL: str
     OPENAI_EMBEDDING_MODEL: str = "text-embedding-3-small"
     OPENAI_EMBEDDING_DIMENSIONS: int = 1536
     ALLOWED_ORIGINS: str = "http://localhost:5173"
@@ -27,6 +28,7 @@ class Settings(BaseSettings):
         "SUPABASE_SERVICE_ROLE_KEY",
         "DATABASE_URL",
         "OPENAI_API_KEY",
+        "OPENAI_CHAT_MODEL",
         "OPENAI_EMBEDDING_MODEL",
     )
     @classmethod
@@ -35,6 +37,13 @@ class Settings(BaseSettings):
         if not stripped:
             raise ValueError("must not be empty")
         return stripped
+
+    @field_validator("OPENAI_CHAT_MODEL")
+    @classmethod
+    def require_openai_chat_model(cls, value: str) -> str:
+        if not value.startswith("openai:") or not value.removeprefix("openai:"):
+            raise ValueError("must start with 'openai:' and include a model name")
+        return value
 
     @field_validator("SUPABASE_URL")
     @classmethod

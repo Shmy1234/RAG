@@ -2,18 +2,27 @@ from pathlib import Path
 from uuid import UUID
 
 from pydantic_ai import Agent, ModelRetry, RunContext
+from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.tools import ToolDefinition
 from pydantic_ai.usage import UsageLimits
 
 from app.assistant.deps import DocumentAgentDeps
 from app.assistant.outputs import AgentAnswer
 from app.chat.stages import RetrievalError
+from app.config import settings
 from app.grounding.evidence import EvidenceCandidate
 from app.grounding.validator import GroundingError
 
 _instructions = Path(__file__).with_name("instructions.md").read_text()
 
+_chat_model = OpenAIChatModel(
+    settings.OPENAI_CHAT_MODEL.removeprefix("openai:"),
+    provider=OpenAIProvider(api_key=settings.OPENAI_API_KEY),
+)
+
 document_agent = Agent(
+    _chat_model,
     deps_type=DocumentAgentDeps,
     output_type=AgentAnswer,
     instructions=_instructions,
