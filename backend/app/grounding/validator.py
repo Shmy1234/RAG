@@ -1,7 +1,7 @@
 from collections.abc import Sequence
 from uuid import UUID
 
-from app.assistant.outputs import GroundedAnswer
+from app.assistant.outputs import Citation, GroundedAnswer
 from app.retrieval.schemas import ChunkReference, SourcePassage
 
 
@@ -22,6 +22,7 @@ class GroundingValidator:
             raise GroundingError("answer must include at least one citation")
 
         cited_chunks: list[ChunkReference] = []
+        canonical_citations: list[Citation] = []
         seen_ids: set[UUID] = set()
         for citation in answer.citations:
             chunk = chunks.get(citation.chunk_id)
@@ -29,15 +30,24 @@ class GroundingValidator:
                 raise GroundingError("citation refers to a chunk that was not retrieved")
             if citation.quoted_text not in chunk.text:
                 raise GroundingError("citation quote does not appear in the retrieved chunk")
-            if citation.citation_label != chunk.citation_label:
-                raise GroundingError("citation label does not match the retrieved chunk")
-            if citation.location_label != chunk.location_label:
-                raise GroundingError("citation location does not match the retrieved chunk")
+            canonical_citations.append(
+                citation.model_copy(
+                    update={
+                        "citation_label": chunk.citation_label,
+                        "location_label": chunk.location_label,
+                    }
+                )
+            )
             if chunk.chunk_id not in seen_ids:
                 cited_chunks.append(chunk)
                 seen_ids.add(chunk.chunk_id)
 
-        return answer.model_copy(update={"cited_passages": self._passages_for_chunks(passages, cited_chunks)})
+        return answer.model_copy(
+            update={
+                "citations": canonical_citations,
+                "cited_passages": self._passages_for_chunks(passages, cited_chunks),
+            }
+        )
 
     @staticmethod
     def _chunk_index(passages: Sequence[SourcePassage]) -> dict[UUID, ChunkReference]:

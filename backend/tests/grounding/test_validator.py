@@ -48,6 +48,22 @@ def test_validator_accepts_citation_matching_retrieved_text():
     assert result.cited_passages[0].center.chunk.chunk_id == citation().chunk_id
 
 
+def test_validator_canonicalizes_metadata_from_retrieved_chunk():
+    answer = GroundedAnswer(
+        answer="Services revenue increased.",
+        citations=[
+            citation().model_copy(
+                update={"citation_label": "wrong label", "location_label": "wrong location"}
+            )
+        ],
+    )
+
+    result = GroundingValidator().validate(answer, [passage()])
+
+    assert result.citations[0].citation_label == "AAPL 10-K 2025"
+    assert result.citations[0].location_label == "page 42, Results"
+
+
 def test_validator_rejects_citation_for_unretrieved_chunk():
     answer = GroundedAnswer(
         answer="Unsupported.",
