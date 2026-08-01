@@ -29,17 +29,19 @@ async def run_query(query_key: str = "apple_revenue_mix") -> None:
         "gpt-4o-mini",
         provider=OpenAIProvider(api_key=settings.OPENAI_API_KEY),
     )
+    deps = DocumentAgentDeps(
+        user_id=uuid4(),
+        thread_id=uuid4(),
+        retriever=retriever,
+        grounding_validator=validator,
+        retrieved_passages=passages,
+    )
     result = await document_agent.run(
         query,
-        deps=DocumentAgentDeps(
-            user_id=uuid4(),
-            thread_id=uuid4(),
-            retriever=retriever,
-            grounding_validator=validator,
-        ),
+        deps=deps,
         model=model,
     )
-    answer = validator.validate(result.output, passages)
+    answer = validator.validate(result.output, deps.retrieved_passages)
     print(answer.model_dump_json(indent=2))
 
 

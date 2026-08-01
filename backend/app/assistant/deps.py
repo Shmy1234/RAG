@@ -19,8 +19,10 @@ class DocumentAgentDeps:
         thread_id: UUID,
         retriever: DocumentRetriever,
         grounding_validator: GroundingValidator,
+        retrieved_passages: list[SourcePassage] | None = None,
     ) -> None:
         self.user_id = user_id
         self.thread_id = thread_id
         self.retriever = retriever
         self.grounding_validator = grounding_validator
+        self.retrieved_passages = retrieved_passages or []

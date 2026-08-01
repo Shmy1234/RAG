@@ -45,10 +45,11 @@ async def run_chat_turn(
         thread_id=thread_id,
         retriever=retriever,
         grounding_validator=grounding_validator,
+        retrieved_passages=passages,
     )
     result = await agent_runner.run(user_text, deps=deps)
     answer = result.output if hasattr(result, "output") else result
-    validated = grounding_validator.validate(answer, passages)
+    validated = grounding_validator.validate(answer, deps.retrieved_passages)
     citation_data = [citation.model_dump(mode="json") for citation in validated.citations]
     assistant_message = await store.append_message(
         thread_id,
