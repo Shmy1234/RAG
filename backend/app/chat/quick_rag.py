@@ -6,8 +6,8 @@ from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.usage import UsageLimits
 
-from app.assistant.outputs import AgentAnswer, GroundedAnswer
 from app.assistant.deps import StageCallback, ignore_stage
+from app.assistant.outputs import AgentAnswer, GroundedAnswer
 from app.chat.stages import RetrievalError
 from app.config import settings
 from app.grounding.evidence import build_evidence_candidates

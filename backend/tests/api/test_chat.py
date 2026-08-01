@@ -17,8 +17,8 @@ from app.api.chat import (
 )
 from app.assistant.outputs import GroundedAnswer
 from app.auth.dependencies import AuthenticatedUser, get_current_user
-from app.chat.stub_stream import build_stub_reply
 from app.chat.routing import RouteDecision
+from app.chat.stub_stream import build_stub_reply
 from app.database.chats import ForbiddenThreadError, ThreadNotFoundError
 from app.main import app
 
