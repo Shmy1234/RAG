@@ -1,5 +1,8 @@
 Setup:
-1. download python, uv,
+1. download python, uv
+- Backend: uv run uvicorn app.main:app --reload
+- Frontend: pnpm dev
+
 2. Gather data —> uv run download.py 
 - Setup Supabase: 
     - anon -> pushlisable key 
@@ -50,4 +53,11 @@ Setup:
 10. FTS pipeline = extra meaningful keywords from prompt using nlk library for search words
 - use shadcn + research best user chat expierence practices 
 - use claude to preform gap analyze and fix design
+
+11. Testing and debugging 
 - fixed the blockers, bugs, filling in the gaps for the pipelines
+- implement tests 
+- Split chats into fast/simple to slower/complex prompts
+- update table extraction to SEC-Aware Table Extraction
+
+12. Depolyment + devops

@@ -171,14 +171,95 @@ Goal: 5 senior analysts can use it for a week and report ≥3 hours saved per an
 - [x] Basic structured logging on backend (`structlog`) for debugging failed turns
 - [x] Review latency: streaming starts within a few seconds for typical queries
 
-## Phase 9 — Deployment (Railway)
+## Phase 9 — DevOps & deployment (AWS + Docker + GitHub Actions)
 
-- [ ] Railway: backend service (Uvicorn, env vars, `ALLOWED_ORIGINS`)
-- [ ] Railway: frontend service (Vite build, `VITE_*` env vars at build time)
-- [ ] Supabase: re-enable email confirmation for production if disabled during dev
-- [ ] Run `alembic upgrade head` against production Supabase (direct connection)
-- [ ] Run ingestion against production database
-- [ ] End-to-end test on deployed URLs with a real Equity Research Assistant-style email account
+Goal: deploy the production app through a repeatable, observable pipeline while learning the AWS building blocks behind container hosting, networking, load balancing, health checks, and rollback.
+
+Target architecture: Route 53 → CloudFront + S3 (React SPA) and Application Load Balancer → ECS Fargate (Dockerized FastAPI) → Supabase + OpenAI.
+
+### 9.1 — AWS account, access, and infrastructure as code
+
+- [ ] Enable MFA on the AWS root account; create an administrative IAM identity for setup work and stop using root
+- [ ] Create an AWS Budget with email alerts and enable billing/free-tier usage notifications
+- [ ] Choose one AWS region and document it as the deployment region
+- [ ] Define the deployment infrastructure in AWS CloudFormation so it can be reviewed, recreated, and updated without console-only steps
+- [ ] Store production secrets in AWS Secrets Manager and non-secret configuration in Systems Manager Parameter Store
+- [ ] Create separate ECS task execution and application task IAM roles with least-privilege policies
+
+### 9.2 — Docker images
+
+- [ ] Add a production backend `Dockerfile`: pinned Python base image, dependency layer caching, non-root runtime user, Uvicorn command, and `.dockerignore`
+- [ ] Add a Docker health check that calls the FastAPI health endpoint without depending on Supabase or OpenAI availability
+- [ ] Build and run the backend image locally; verify health, CORS, authentication, streaming, and graceful shutdown
+- [ ] Create a private Amazon ECR repository with immutable tags, vulnerability scanning, and a lifecycle rule for old images
+- [ ] Tag backend images with the Git commit SHA instead of deploying mutable `latest` tags
+
+### 9.3 — VPC and network security
+
+- [ ] Create a VPC spanning two Availability Zones
+- [ ] Create public subnets for the Application Load Balancer and NAT gateways
+- [ ] Create private subnets for ECS tasks; route outbound Supabase, OpenAI, ECR, and CloudWatch traffic through the NAT gateways
+- [ ] Create an ALB security group allowing public HTTP/HTTPS traffic
+- [ ] Create an ECS security group allowing backend traffic only from the ALB security group
+- [ ] Confirm the database remains in Supabase; do not add RDS or expose ECS task ports directly to the internet
+
+### 9.4 — Backend on ECS Fargate
+
+- [ ] Create an ECS cluster, Fargate task definition, and service using the ECR image
+- [ ] Inject secrets and configuration into the task definition; set production `ALLOWED_ORIGINS` explicitly
+- [ ] Send container logs to a CloudWatch Logs group with a retention policy
+- [ ] Create an Application Load Balancer, HTTPS listener, target group, and HTTP-to-HTTPS redirect
+- [ ] Configure the target group to health-check the FastAPI health endpoint with an appropriate startup grace period
+- [ ] Run two ECS tasks across Availability Zones and enable rolling deployments
+- [ ] Enable the ECS deployment circuit breaker with automatic rollback when tasks fail to start or become healthy
+- [ ] Configure ECS Service Auto Scaling with conservative minimum/maximum task counts and CPU/memory targets
+- [ ] Verify the ALB routes only to healthy tasks and the API stream remains open for a complete assistant response
+
+### 9.5 — Frontend on S3 and CloudFront
+
+- [ ] Create a private S3 bucket for the Vite production build; block all public bucket access
+- [ ] Create a CloudFront distribution with Origin Access Control so only CloudFront can read the bucket
+- [ ] Configure SPA fallback routing so React Router paths return `index.html`
+- [ ] Configure production `VITE_API_BASE_URL`, `VITE_SUPABASE_URL`, and `VITE_SUPABASE_ANON_KEY` at build time
+- [ ] Set long-lived immutable caching for hashed assets and no-cache behavior for `index.html`
+- [ ] Verify direct navigation and refresh work on login, chat-list, and chat-thread routes
+
+### 9.6 — DNS and TLS
+
+- [ ] Manage the application domain in Route 53 or delegate the required DNS records to Route 53
+- [ ] Issue AWS Certificate Manager certificates for the frontend and API domains
+- [ ] Attach the certificates to CloudFront and the ALB; expose only HTTPS publicly
+- [ ] Create Route 53 alias records for the CloudFront distribution and ALB
+- [ ] Update Supabase Auth redirect URLs and backend CORS origins to the final production domains
+
+### 9.7 — GitHub Actions CI/CD
+
+- [ ] Create a GitHub Actions OIDC identity provider and least-privilege deployment role in AWS; do not store long-lived AWS access keys in GitHub
+- [ ] Add a pull-request workflow that runs backend tests, frontend tests/type-checking, the frontend build, and a backend Docker build
+- [ ] Add a production backend workflow: authenticate through OIDC, build the image, push the commit-SHA tag to ECR, register a task-definition revision, and update the ECS service
+- [ ] Make the backend workflow wait for ECS stability and fail when the deployment circuit breaker rolls back
+- [ ] Add a production frontend workflow: build the SPA, sync assets to S3 without deleting unrelated objects, and invalidate the required CloudFront paths
+- [ ] Protect the production GitHub environment, restrict deployments to the production branch, and require workflow approval if the repository supports it
+- [ ] Prevent concurrent production deployments from racing by using a GitHub Actions concurrency group
+
+### 9.8 — Observability and operational checks
+
+- [ ] Create a CloudWatch dashboard for ALB request count/latency/4xx/5xx, unhealthy targets, and ECS CPU/memory/running-task count
+- [ ] Create CloudWatch alarms for ALB 5xx responses, unhealthy targets, no running ECS tasks, deployment failure, and sustained CPU/memory pressure
+- [ ] Send alarm and failed-deployment notifications through SNS email
+- [ ] Verify container logs contain request/deployment context without tokens, secrets, or filing contents that should remain private
+- [ ] Test failure handling: deploy an unhealthy image, confirm traffic stays on healthy tasks or rolls back, and then restore the valid revision
+- [ ] Document rollback, log inspection, ECS task restart, secret rotation, and CloudFront cache invalidation commands in the deployment runbook
+
+### 9.9 — Production release
+
+- [ ] Supabase: re-enable email confirmation for production if disabled during development
+- [ ] Run `alembic upgrade head` against production Supabase using the direct connection before deploying application code that depends on the migration
+- [ ] Run ingestion against the production database and verify document/chunk counts
+- [ ] Deploy the backend and frontend exclusively through GitHub Actions
+- [ ] Run smoke tests against the public health endpoint, authentication flow, chat history, streaming response, and citation source panel
+- [ ] End-to-end test on the deployed URLs with a real Equity Research Assistant-style email account
+- [ ] Review AWS Cost Explorer, Budget status, CloudWatch alarms, and GitHub Actions deployment history after the first 24 hours
 
 ## Quick reference
 
