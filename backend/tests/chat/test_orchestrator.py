@@ -7,6 +7,7 @@ import pytest
 
 from app.assistant.outputs import AgentAnswer, Citation, CitationDraft, GroundedAnswer
 from app.chat.orchestrator import run_chat_turn
+from app.chat.routing import RouteDecision
 from app.grounding.validator import GroundingError, GroundingValidator
 from app.retrieval.schemas import ChunkReference, FusedChunk, SourcePassage
 
@@ -30,6 +31,49 @@ def passage() -> SourcePassage:
     return SourcePassage(center=FusedChunk(chunk=chunk, rrf_score=1.0))
 
 
+def grounded_answer() -> GroundedAnswer:
+    chunk = passage().center.chunk
+    return GroundedAnswer(
+        answer="Services revenue increased 14% in fiscal 2025.",
+        citations=[
+            Citation(
+                chunk_id=chunk.chunk_id,
+                citation_index=0,
+                quoted_text=chunk.text,
+                citation_label=chunk.citation_label,
+                location_label=chunk.location_label,
+            )
+        ],
+    )
+
+
+class FakeStore:
+    def __init__(self):
+        self.messages = []
+        self.grounded_calls = []
+
+    async def append_message(self, thread_id, role, content, message_data):
+        message = {"role": role, "content": content, "message_data": message_data}
+        self.messages.append(message)
+        return message
+
+    async def append_grounded_answer(self, thread_id, content, message_data, citations):
+        self.grounded_calls.append((thread_id, content, message_data, citations))
+        message = {"role": "assistant", "content": content, "message_data": message_data}
+        self.messages.append(message)
+        return message
+
+
+class FakeRouter:
+    def __init__(self, decision: RouteDecision):
+        self.decision = decision
+        self.calls = []
+
+    async def route(self, prompt: str):
+        self.calls.append(prompt)
+        return self.decision
+
+
 class FakeRetriever:
     def __init__(self):
         self.retrieve_calls = 0
@@ -39,74 +83,54 @@ class FakeRetriever:
         return [passage()]
 
 
-class FakeStore:
-    def __init__(self):
-        self.messages = []
-        self.citations = []
-        self.grounded_calls = []
+class FakeQuickRagRunner:
+    def __init__(self, answer: GroundedAnswer | None = None):
+        self.answer = answer or grounded_answer()
+        self.calls = []
 
-    async def append_message(self, thread_id, role, content, message_data):
-        message = {"id": str(uuid4()), "role": role, "content": content, "message_data": message_data}
-        self.messages.append(message)
-        return message
-
-    async def append_grounded_answer(self, thread_id, content, message_data, citations):
-        self.grounded_calls.append((thread_id, content, message_data, citations))
-        message = {
-            "id": str(uuid4()),
-            "role": "assistant",
-            "content": content,
-            "message_data": message_data,
-        }
-        self.messages.append(message)
-        self.citations.extend(citations)
-        return message
-
-
-def grounded_answer() -> GroundedAnswer:
-    chunk = passage().center.chunk
-    return GroundedAnswer(
-        answer="Services revenue increased.",
-        citations=[
-            Citation(
-                chunk_id=chunk.chunk_id,
-                citation_index=0,
-                quoted_text="Services revenue increased 14% in fiscal 2025.",
-                citation_label=chunk.citation_label,
-                location_label=chunk.location_label,
-            )
-        ],
-    )
-
-
-class FakeAgent:
-    def __init__(self, answer):
-        self.answer = answer
-        self.usage_limits = None
-
-    async def run(self, prompt, *, deps, usage_limits):
-        self.usage_limits = usage_limits
-        deps.add_passages(await deps.retriever.retrieve(prompt))
-        return SimpleNamespace(output=self.answer)
+    async def run(self, prompt, *, retriever, grounding_validator, on_stage):
+        self.calls.append(prompt)
+        await on_stage("searching")
+        await on_stage("analyzing")
+        await on_stage("validating")
+        return self.answer
 
 
 class EvidenceAgent:
+    def __init__(self, answer: AgentAnswer | None = None):
+        self.answer = answer
+        self.calls = 0
+
     async def run(self, prompt, *, deps, usage_limits):
+        self.calls += 1
         passages = await deps.retriever.retrieve(prompt)
         deps.add_passages(passages)
-        evidence = deps.register_passage_evidence(passages, prompt)[0]
-        return SimpleNamespace(
-            output=AgentAnswer(
-                answer="Services revenue increased.",
+        await deps.on_stage("analyzing")
+        if self.answer is not None:
+            output = self.answer
+        else:
+            evidence = deps.register_passage_evidence(passages, prompt)[0]
+            output = AgentAnswer(
+                answer="Services revenue increased 14% in fiscal 2025.",
                 citations=[CitationDraft(evidence_id=evidence.evidence_id)],
             )
-        )
+        return SimpleNamespace(output=output)
 
 
-def test_run_chat_turn_persists_only_validated_answer_and_citations():
-    store = FakeStore()
-    retriever = FakeRetriever()
-    agent = FakeAgent(grounded_answer())
+def clock():
+    values = iter([1.0, 1.01, 2.0, 2.02])
+    return lambda: next(values)
+
+
+def run_turn(route: RouteDecision, **overrides):
+    store = overrides.pop("store", FakeStore())
+    retriever = overrides.pop("retriever", FakeRetriever())
+    agent = overrides.pop("agent_runner", EvidenceAgent())
+    quick = overrides.pop("quick_rag_runner", FakeQuickRagRunner())
+    stages = []
+
+    async def report(stage):
+        stages.append(stage)
 
     result = asyncio.run(
         run_chat_turn(
@@ -114,57 +138,90 @@ def test_run_chat_turn_persists_only_validated_answer_and_citations():
             thread_id=uuid4(),
             user_text="What happened to Services revenue?",
             store=store,
+            router=FakeRouter(route),
+            quick_rag_runner=quick,
             agent_runner=agent,
             retriever=retriever,
             grounding_validator=GroundingValidator(),
+            on_stage=report,
+            clock=clock(),
+            **overrides,
         )
     )
+    return result, store, retriever, agent, quick, stages
 
-    assert result.answer == "Services revenue increased."
+
+@pytest.mark.parametrize(
+    ("route", "answer"),
+    [
+        ("instant", "Hi! How can I help with your filing research?"),
+        ("direct", "I can explain how to use this filing workspace."),
+    ],
+)
+def test_non_rag_routes_skip_retrieval_and_models(route, answer):
+    result, store, retriever, agent, quick, stages = run_turn(
+        RouteDecision(route=route, answer=answer)
+    )
+
+    assert result.answer == answer
+    assert retriever.retrieve_calls == 0
+    assert agent.calls == 0
+    assert quick.calls == []
+    assert stages == ["routing", "saving"]
     assert [message["role"] for message in store.messages] == ["user", "assistant"]
-    assert len(store.citations) == 1
-    assert len(store.grounded_calls) == 1
-    assert store.citations[0]["citation_index"] == 0
+
+
+def test_quick_rag_delegates_to_one_pass_runner():
+    result, store, retriever, agent, quick, stages = run_turn(
+        RouteDecision(route="quick_rag")
+    )
+
+    assert result.citations
+    assert quick.calls == ["What happened to Services revenue?"]
+    assert agent.calls == 0
+    assert retriever.retrieve_calls == 0
+    assert stages == ["routing", "searching", "analyzing", "validating", "saving"]
+    assert store.grounded_calls[0][3][0]["citation_index"] == 0
+
+
+def test_deep_rag_runs_agent_and_validates_registered_evidence():
+    result, store, retriever, agent, quick, stages = run_turn(RouteDecision(route="deep_rag"))
+
+    assert result.citations[0].quoted_text == passage().center.chunk.text
+    assert agent.calls == 1
+    assert quick.calls == []
     assert retriever.retrieve_calls == 1
-    assert agent.usage_limits.request_limit == 4
-    assert agent.usage_limits.tool_calls_limit == 6
+    assert stages == ["routing", "searching", "analyzing", "validating", "saving"]
+    assert len(store.grounded_calls[0][3]) == 1
 
 
-def test_run_chat_turn_does_not_persist_assistant_on_grounding_failure():
+@pytest.mark.parametrize("route", ["instant", "direct", "quick_rag", "deep_rag"])
+def test_all_routes_persist_route_and_non_negative_timing(route):
+    decision = (
+        RouteDecision(route=route, answer="Hello.")
+        if route in {"instant", "direct"}
+        else RouteDecision(route=route)
+    )
+
+    _, store, *_ = run_turn(decision)
+
+    message_data = store.grounded_calls[0][2]
+    assert message_data["route"] == route
+    assert message_data["routing_ms"] == 10
+    assert message_data["execution_ms"] == 20
+    assert message_data["citations"] == store.grounded_calls[0][3]
+
+
+def test_deep_rag_does_not_persist_assistant_on_grounding_failure():
     store = FakeStore()
     invalid = AgentAnswer(answer="Unsupported.", citations=[])
 
     with pytest.raises(GroundingError):
-        asyncio.run(
-            run_chat_turn(
-                user_id=uuid4(),
-                thread_id=uuid4(),
-                user_text="What happened?",
-                store=store,
-                agent_runner=FakeAgent(invalid),
-                retriever=FakeRetriever(),
-                grounding_validator=GroundingValidator(),
-            )
+        run_turn(
+            RouteDecision(route="deep_rag"),
+            store=store,
+            agent_runner=EvidenceAgent(invalid),
         )
 
     assert [message["role"] for message in store.messages] == ["user"]
-    assert store.citations == []
-
-
-def test_run_chat_turn_validates_registered_evidence_before_persistence():
-    store = FakeStore()
-
-    result = asyncio.run(
-        run_chat_turn(
-            user_id=uuid4(),
-            thread_id=uuid4(),
-            user_text="What happened to Services revenue?",
-            store=store,
-            agent_runner=EvidenceAgent(),
-            retriever=FakeRetriever(),
-            grounding_validator=GroundingValidator(),
-        )
-    )
-
-    assert result.citations[0].quoted_text == passage().center.chunk.text
-    assert len(store.citations) == 1
+    assert store.grounded_calls == []

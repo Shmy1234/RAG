@@ -7,6 +7,7 @@ from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.usage import UsageLimits
 
 from app.assistant.outputs import AgentAnswer, GroundedAnswer
+from app.assistant.deps import StageCallback, ignore_stage
 from app.chat.stages import RetrievalError
 from app.config import settings
 from app.grounding.evidence import build_evidence_candidates
@@ -50,7 +51,10 @@ class QuickRagRunner:
         *,
         retriever: DocumentRetriever,
         grounding_validator: GroundingValidator,
+        on_stage: StageCallback | None = None,
     ) -> GroundedAnswer:
+        report_stage = on_stage or ignore_stage
+        await report_stage("searching")
         try:
             passages = await retriever.retrieve(prompt, top_k=5, candidate_k=50)
         except Exception as error:
@@ -60,6 +64,7 @@ class QuickRagRunner:
         if not candidates:
             return GroundedAnswer(answer=INSUFFICIENT_EVIDENCE_ANSWER)
 
+        await report_stage("analyzing")
         payload = {
             "question": prompt,
             "evidence": [candidate.model_dump(mode="json") for candidate in candidates],
@@ -69,6 +74,7 @@ class QuickRagRunner:
             usage_limits=UsageLimits(request_limit=1),
         )
         evidence_index = {candidate.evidence_id: candidate for candidate in candidates}
+        await report_stage("validating")
         return grounding_validator.validate(
             result.output,
             passages,

@@ -1,3 +1,5 @@
+from collections.abc import Callable
+from time import monotonic
 from typing import Protocol
 from uuid import UUID
 
@@ -6,6 +8,7 @@ from pydantic_ai.usage import UsageLimits
 from app.assistant.agent import agent_usage_limits
 from app.assistant.deps import DocumentAgentDeps, StageCallback, ignore_stage
 from app.assistant.outputs import GroundedAnswer
+from app.chat.routing import RouteDecision
 from app.grounding.validator import GroundingValidator
 from app.retrieval.retriever import DocumentRetriever
 
@@ -38,19 +41,100 @@ class AgentRunner(Protocol):
     ): ...
 
 
+class RouterLike(Protocol):
+    async def route(self, prompt: str) -> RouteDecision: ...
+
+
+class QuickRagRunnerLike(Protocol):
+    async def run(
+        self,
+        prompt: str,
+        *,
+        retriever: DocumentRetriever,
+        grounding_validator: GroundingValidator,
+        on_stage: StageCallback,
+    ) -> GroundedAnswer: ...
+
+
 async def run_chat_turn(
     *,
     user_id: UUID,
     thread_id: UUID,
     user_text: str,
     store: ChatStoreLike,
+    router: RouterLike,
+    quick_rag_runner: QuickRagRunnerLike,
     agent_runner: AgentRunner,
     retriever: DocumentRetriever,
     grounding_validator: GroundingValidator,
     on_stage: StageCallback | None = None,
+    clock: Callable[[], float] = monotonic,
 ) -> GroundedAnswer:
     report_stage = on_stage or ignore_stage
-    await store.append_message(thread_id, "user", user_text, {"phase": 6})
+    await store.append_message(thread_id, "user", user_text, {"phase": 8})
+
+    await report_stage("routing")
+    routing_started = clock()
+    decision = await router.route(user_text)
+    routing_ms = _elapsed_ms(routing_started, clock())
+
+    execution_started = clock()
+    answer = await _execute_route(
+        decision=decision,
+        user_id=user_id,
+        thread_id=thread_id,
+        user_text=user_text,
+        quick_rag_runner=quick_rag_runner,
+        agent_runner=agent_runner,
+        retriever=retriever,
+        grounding_validator=grounding_validator,
+        report_stage=report_stage,
+    )
+    execution_ms = _elapsed_ms(execution_started, clock())
+
+    citation_data = [citation.model_dump(mode="json") for citation in answer.citations]
+    message_data: dict[str, object] = {
+        "phase": 8,
+        "route": decision.route,
+        "routing_ms": routing_ms,
+        "execution_ms": execution_ms,
+        "citations": citation_data,
+    }
+    await report_stage("saving")
+    await store.append_grounded_answer(
+        thread_id,
+        answer.answer,
+        message_data,
+        citation_data,
+    )
+    return answer
+
+
+async def _execute_route(
+    *,
+    decision: RouteDecision,
+    user_id: UUID,
+    thread_id: UUID,
+    user_text: str,
+    quick_rag_runner: QuickRagRunnerLike,
+    agent_runner: AgentRunner,
+    retriever: DocumentRetriever,
+    grounding_validator: GroundingValidator,
+    report_stage: StageCallback,
+) -> GroundedAnswer:
+    if decision.route in {"instant", "direct"}:
+        if decision.answer is None:
+            raise ValueError("non-RAG route is missing its answer")
+        return GroundedAnswer(answer=decision.answer)
+
+    if decision.route == "quick_rag":
+        return await quick_rag_runner.run(
+            user_text,
+            retriever=retriever,
+            grounding_validator=grounding_validator,
+            on_stage=report_stage,
+        )
+
     deps = DocumentAgentDeps(
         user_id=user_id,
         thread_id=thread_id,
@@ -64,19 +148,14 @@ async def run_chat_turn(
         deps=deps,
         usage_limits=agent_usage_limits(),
     )
-    answer = result.output if hasattr(result, "output") else result
+    raw_answer = result.output if hasattr(result, "output") else result
     await report_stage("validating")
-    validated = grounding_validator.validate(
-        answer,
+    return grounding_validator.validate(
+        raw_answer,
         deps.retrieved_passages,
         evidence_candidates=deps.evidence_candidates,
     )
-    citation_data = [citation.model_dump(mode="json") for citation in validated.citations]
-    await report_stage("saving")
-    await store.append_grounded_answer(
-        thread_id,
-        validated.answer,
-        {"phase": 6, "citations": citation_data},
-        citation_data,
-    )
-    return validated
+
+
+def _elapsed_ms(started: float, finished: float) -> int:
+    return max(0, round((finished - started) * 1000))

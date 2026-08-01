@@ -62,12 +62,17 @@ class EvidenceAnswerRunner:
 def test_quick_rag_retrieves_once_and_returns_validated_citation():
     retriever = FakeRetriever([passage()])
     model = EvidenceAnswerRunner()
+    stages = []
+
+    async def report(stage):
+        stages.append(stage)
 
     result = asyncio.run(
         QuickRagRunner(model).run(
             "What happened to Services revenue?",
             retriever=retriever,
             grounding_validator=GroundingValidator(),
+            on_stage=report,
         )
     )
 
@@ -82,6 +87,7 @@ def test_quick_rag_retrieves_once_and_returns_validated_citation():
     assert model.calls[0][0]["evidence"][0]["exact_quote"] == passage().center.chunk.text
     assert model.calls[0][1].request_limit == 1
     assert result.citations[0].chunk_id == passage().center.chunk.chunk_id
+    assert stages == ["searching", "analyzing", "validating"]
 
 
 def test_quick_rag_empty_result_skips_answer_model():
