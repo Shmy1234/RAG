@@ -114,3 +114,24 @@ class ChatStore:
             )
         )
         return dict(response.data[0])
+
+    async def append_citations(
+        self,
+        message_id: str,
+        citations: list[dict[str, object]],
+    ) -> None:
+        if not citations:
+            return
+
+        def insert_rows() -> None:
+            for citation in citations:
+                self.client.table("message_citations").insert(
+                    {
+                        "message_id": message_id,
+                        "chunk_id": str(citation["chunk_id"]),
+                        "citation_index": int(citation["citation_index"]),
+                        "quoted_text": str(citation["quoted_text"]),
+                    }
+                ).execute()
+
+        await asyncio.to_thread(insert_rows)

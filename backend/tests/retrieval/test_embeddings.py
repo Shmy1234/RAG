@@ -1,4 +1,5 @@
 import asyncio
+from typing import ClassVar
 
 import pytest
 
@@ -6,11 +7,11 @@ from app.retrieval.embeddings import OpenAIQueryEmbedder
 
 
 class FakeEmbedding:
-    embedding = [0.1, 0.2, 0.3]
+    embedding: ClassVar[list[float]] = [0.1, 0.2, 0.3]
 
 
 class FakeResponse:
-    data = [FakeEmbedding()]
+    data: ClassVar[list[FakeEmbedding]] = [FakeEmbedding()]
 
 
 class FakeEmbeddingsClient:

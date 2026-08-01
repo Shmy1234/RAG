@@ -1,11 +1,18 @@
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from uuid import UUID, uuid4
 
 import pytest
 from fastapi import status
 from httpx import ASGITransport, AsyncClient
 
-from app.api.chat import get_chat_store
+from app.api.chat import (
+    get_agent_runner,
+    get_chat_store,
+    get_document_retriever,
+    get_grounding_validator,
+)
+from app.assistant.outputs import GroundedAnswer
 from app.auth.dependencies import AuthenticatedUser, get_current_user
 from app.chat.stub_stream import build_stub_reply
 from app.database.chats import ForbiddenThreadError, ThreadNotFoundError
@@ -74,6 +81,24 @@ class MemoryChatStore:
         self.messages.append(message)
         return message
 
+    async def append_citations(self, message_id: str, citations):
+        return None
+
+
+class FakeRetriever:
+    async def retrieve(self, query: str, **kwargs):
+        return []
+
+
+class FakeAgent:
+    async def run(self, prompt: str, *, deps):
+        return SimpleNamespace(output=GroundedAnswer(answer=build_stub_reply(prompt)))
+
+
+class FakeGroundingValidator:
+    def validate(self, answer, passages):
+        return answer
+
 
 @pytest.fixture
 def store() -> MemoryChatStore:
@@ -118,6 +143,9 @@ async def test_stream_persists_messages_and_returns_stub(user, store):
 
     app.dependency_overrides[get_current_user] = override_user
     app.dependency_overrides[get_chat_store] = lambda: store
+    app.dependency_overrides[get_document_retriever] = lambda: FakeRetriever()
+    app.dependency_overrides[get_agent_runner] = lambda: FakeAgent()
+    app.dependency_overrides[get_grounding_validator] = lambda: FakeGroundingValidator()
     await store.create_thread(user.id, "Apple revenue mix")
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
@@ -130,7 +158,8 @@ async def test_stream_persists_messages_and_returns_stub(user, store):
         )
 
     assert response.status_code == status.HTTP_200_OK
-    assert response.text == build_stub_reply("What changed?")
+    assert '"type": "text-delta"' in response.text
+    assert '"type": "finish"' in response.text
     assert [message["role"] for message in store.messages] == ["user", "assistant"]
 
 

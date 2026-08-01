@@ -1,10 +1,10 @@
-import { TextStreamChatTransport } from 'ai'
+import { DefaultChatTransport } from 'ai'
 
 import { env } from '@/lib/env'
 import { supabase } from '@/lib/supabase'
 
 export function createChatTransport() {
-  return new TextStreamChatTransport({
+  return new DefaultChatTransport({
     api: new URL('/chat/stream', `${env.apiBaseUrl}/`).toString(),
     headers: async (): Promise<Record<string, string>> => {
       const { data } = await supabase.auth.getSession()

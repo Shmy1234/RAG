@@ -155,3 +155,23 @@ async def test_chat_store_raises_not_found_for_unknown_thread(ids) -> None:
 
     with pytest.raises(ThreadNotFoundError):
         await ChatStore(FakeClient({"chat_threads": []})).get_thread(user_id, thread_id)
+
+
+@pytest.mark.anyio
+async def test_chat_store_persists_message_citations(ids) -> None:
+    _user_id, _other_user_id, thread_id = ids
+    client = FakeClient({"message_citations": []})
+
+    await ChatStore(client).append_citations(
+        str(thread_id),
+        [
+            {
+                "chunk_id": str(uuid4()),
+                "citation_index": 0,
+                "quoted_text": "Services revenue increased.",
+            }
+        ],
+    )
+
+    assert client.tables["message_citations"][0]["message_id"] == str(thread_id)
+    assert client.tables["message_citations"][0]["citation_index"] == 0
