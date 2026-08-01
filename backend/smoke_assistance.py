@@ -19,33 +19,33 @@ USER_QUERIES = {
 }
 
 
-def run_query(query_key: str = "apple_revenue_mix") -> None:
+async def run_query(query_key: str = "apple_revenue_mix") -> None:
     query = USER_QUERIES[query_key]
 
-    async def run() -> None:
-        retriever = DocumentRetriever(session_factory=create_sessionmaker())
-        validator = GroundingValidator()
-        passages = await retriever.retrieve(query, top_k=5, candidate_k=50)
-        agent = document_agent
-        model = OpenAIChatModel(
-            "gpt-4o-mini",
-            provider=OpenAIProvider(api_key=settings.OPENAI_API_KEY),
-        )
-        result = await agent.run(
-            query,
-            deps=DocumentAgentDeps(
-                user_id=uuid4(),
-                thread_id=uuid4(),
-                retriever=retriever,
-                grounding_validator=validator,
-            ),
-            model=model,
-        )
-        answer = validator.validate(result.output, passages)
-        print(answer.model_dump_json(indent=2))
+    retriever = DocumentRetriever(session_factory=create_sessionmaker())
+    validator = GroundingValidator()
+    passages = await retriever.retrieve(query, top_k=5, candidate_k=50)
+    model = OpenAIChatModel(
+        "gpt-4o-mini",
+        provider=OpenAIProvider(api_key=settings.OPENAI_API_KEY),
+    )
+    result = await document_agent.run(
+        query,
+        deps=DocumentAgentDeps(
+            user_id=uuid4(),
+            thread_id=uuid4(),
+            retriever=retriever,
+            grounding_validator=validator,
+        ),
+        model=model,
+    )
+    answer = validator.validate(result.output, passages)
+    print(answer.model_dump_json(indent=2))
 
-    asyncio.run(run())
+
+def main() -> None:
+    asyncio.run(run_query())
 
 
 if __name__ == "__main__":
-    run_query()
+    main()
