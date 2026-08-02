@@ -1,3 +1,4 @@
+import { Suspense, lazy } from 'react'
 import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom'
 
 import { ThemeProvider } from '@/app/ThemeProvider'
@@ -7,6 +8,10 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { AuthPage } from '@/pages/AuthPage'
 import { ChatPage } from '@/pages/ChatPage'
+
+// The landing page carries the display face and the animation runtime. Split so
+// signed-in users going straight to /app never download either.
+const HomePage = lazy(async () => ({ default: (await import('@/pages/HomePage')).HomePage }))
 
 function ProtectedRoute() {
   const { loading, session } = useAuth()
@@ -40,13 +45,21 @@ function App() {
         <TooltipProvider>
           <AuthProvider>
             <Routes>
+              <Route
+                element={
+                  <Suspense fallback={<div className="min-h-svh bg-background" />}>
+                    <HomePage />
+                  </Suspense>
+                }
+                path="/"
+              />
               <Route element={<AuthPage mode="sign-in" />} path="/sign-in" />
               <Route element={<AuthPage mode="sign-up" />} path="/sign-up" />
               <Route element={<ProtectedRoute />}>
                 <Route element={<ChatPage />} path="/app" />
                 <Route element={<ChatPage />} path="/app/chats/:threadId" />
               </Route>
-              <Route element={<Navigate replace to="/app" />} path="*" />
+              <Route element={<Navigate replace to="/" />} path="*" />
             </Routes>
           </AuthProvider>
         </TooltipProvider>

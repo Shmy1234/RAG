@@ -1,8 +1,10 @@
-import { FileText, MessageSquarePlus, Search } from 'lucide-react'
+import { MessageSquarePlus, Search } from 'lucide-react'
 import { useMemo, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
 
+import { ThreadListItem } from '@/components/app/ThreadListItem'
 import { UserMenu } from '@/components/app/UserMenu'
+import { LogoMark } from '@/components/brand/Logo'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Sidebar,
@@ -27,10 +29,19 @@ type AppSidebarProps = {
   threads: ChatThread[]
   loading: boolean
   creating: boolean
+  runningThreadIds: ReadonlySet<string>
   onCreateThread: () => void
+  onDeleteThread: (threadId: string) => void
 }
 
-export function AppSidebar({ threads, loading, creating, onCreateThread }: AppSidebarProps) {
+export function AppSidebar({
+  threads,
+  loading,
+  creating,
+  runningThreadIds,
+  onCreateThread,
+  onDeleteThread,
+}: AppSidebarProps) {
   const { threadId } = useParams()
   const { state } = useSidebar()
   const [query, setQuery] = useState('')
@@ -49,7 +60,7 @@ export function AppSidebar({ threads, loading, creating, onCreateThread }: AppSi
       <SidebarHeader>
         <div className="flex items-center gap-2 px-1 py-0.5 group-data-[collapsible=icon]:px-0">
           <div className="flex size-7 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground">
-            <FileText className="size-3.5" />
+            <LogoMark className="size-3.5" />
           </div>
           <span className="min-w-0 flex-1 truncate font-medium group-data-[collapsible=icon]:hidden">
             Document Copilot
@@ -121,14 +132,13 @@ export function AppSidebar({ threads, loading, creating, onCreateThread }: AppSi
               <SidebarGroupContent>
                 <SidebarMenu>
                   {group.threads.map((thread) => (
-                    <SidebarMenuItem key={thread.id}>
-                      <SidebarMenuButton
-                        isActive={thread.id === threadId}
-                        render={<Link to={`/app/chats/${thread.id}`} />}
-                      >
-                        <span className="truncate">{thread.title || 'New chat'}</span>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
+                    <ThreadListItem
+                      active={thread.id === threadId}
+                      key={thread.id}
+                      onDelete={onDeleteThread}
+                      running={runningThreadIds.has(thread.id)}
+                      thread={thread}
+                    />
                   ))}
                 </SidebarMenu>
               </SidebarGroupContent>

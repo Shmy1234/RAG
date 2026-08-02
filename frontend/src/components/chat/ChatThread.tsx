@@ -1,5 +1,12 @@
 import { useChat } from '@ai-sdk/react'
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type FormEvent,
+} from 'react'
 import { Link } from 'react-router-dom'
 
 import {
@@ -22,18 +29,12 @@ import {
   describeStreamError,
   type ErrorDescription,
 } from '@/components/chat/chat-errors'
-import {
-  messageErrorCode,
-  messageStages,
-  messageText,
-  toInitialChatMessage,
-  type InitialChatMessage,
-} from '@/components/chat/message-format'
+import { messageErrorCode, messageStages, messageText } from '@/components/chat/message-format'
 import { ErrorNotice } from '@/components/common/ErrorNotice'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { chatApi } from '@/lib/chat-api'
-import { createChatTransport } from '@/lib/chat-stream'
+import { chatRegistry } from '@/lib/chat-registry'
 import { deriveThreadTitle } from '@/lib/format'
 
 type ChatThreadProps = {
@@ -46,28 +47,33 @@ export function ChatThread({ threadId, hasTitle, onThreadChanged }: ChatThreadPr
   const [input, setInput] = useState('')
   const [loadingHistory, setLoadingHistory] = useState(true)
   const [historyError, setHistoryError] = useState<ErrorDescription | null>(null)
-  const [sendError, setSendError] = useState<ErrorDescription | null>(null)
   const [selected, setSelected] = useState<SelectedCitation | null>(null)
   const [historyToken, setHistoryToken] = useState(0)
   const lastChipRef = useRef<HTMLButtonElement | null>(null)
   const composerRef = useRef<HTMLTextAreaElement>(null)
 
-  const transport = useMemo(() => createChatTransport(), [])
-  const { messages, sendMessage, status, stop, setMessages } = useChat({
-    id: threadId,
-    transport,
-  })
+  // The instance outlives this component, so a run started here keeps streaming
+  // while another thread is on screen and is rejoined mid-flight on return.
+  const chat = chatRegistry.chatFor(threadId)
+  const { messages, status, stop } = useChat({ chat })
+
+  // A send that fails after the reader has moved on still belongs to its thread,
+  // so the failure lives in the registry rather than in this component's state.
+  useSyncExternalStore(chatRegistry.subscribe, chatRegistry.version)
+  const sendFailure = chatRegistry.sendFailure(threadId)
 
   useEffect(() => {
     let cancelled = false
 
     async function loadMessages() {
-      setLoadingHistory(true)
+      // Returning to a thread already in memory must not blank it behind a
+      // skeleton — least of all while its answer is still streaming in.
+      setLoadingHistory(!chatRegistry.isLoaded(threadId))
       setHistoryError(null)
       try {
-        const rows = await chatApi.listMessages(threadId)
-        if (cancelled) return
-        setMessages(rows.map(toInitialChatMessage) as InitialChatMessage[])
+        await (historyToken === 0
+          ? chatRegistry.loadHistory(threadId)
+          : chatRegistry.reloadHistory(threadId))
       } catch (unknownError) {
         if (!cancelled) setHistoryError(describeError(unknownError))
       } finally {
@@ -79,26 +85,29 @@ export function ChatThread({ threadId, hasTitle, onThreadChanged }: ChatThreadPr
     return () => {
       cancelled = true
     }
-  }, [threadId, historyToken, setMessages])
+  }, [threadId, historyToken])
 
   const busy = status === 'streaming' || status === 'submitted'
 
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    const text = input.trim()
-    if (!text || busy) return
-
+  async function send(text: string) {
     setInput('')
-    setSendError(null)
+    await chatRegistry.send(threadId, text)
+    if (chatRegistry.sendFailure(threadId)) return
     try {
-      await sendMessage({ text }, { body: { threadId } })
       // The thread is named after the question that started it.
       if (!hasTitle) await chatApi.updateThreadTitle(threadId, deriveThreadTitle(text))
       await onThreadChanged()
-    } catch (unknownError) {
-      setInput(text)
-      setSendError(describeError(unknownError))
+    } catch {
+      // The answer is saved; an unnamed thread in the sidebar is not worth
+      // reporting as a failed turn.
     }
+  }
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const text = input.trim()
+    if (!text || busy) return
+    void send(text)
   }
 
   /** Closing the rail returns focus to the chip that opened it. */
@@ -109,10 +118,23 @@ export function ChatThread({ threadId, hasTitle, onThreadChanged }: ChatThreadPr
   }, [])
 
   const lastMessage = messages.at(-1)
-  const streamErrorCode = lastMessage ? messageErrorCode(lastMessage) : null
-  const activeError =
-    sendError ?? (streamErrorCode ? describeStreamError(streamErrorCode) : null) ?? historyError
+  // Turn failures render beside the turn that failed; only transport and history
+  // problems belong at the bottom of the thread.
+  const activeError = sendFailure ? describeError(sendFailure.error) : historyError
   const stages = busy && lastMessage?.role === 'assistant' ? messageStages(lastMessage) : []
+
+  function retryLastSend() {
+    if (!sendFailure) return
+    chatRegistry.clearSendFailure(threadId)
+    void send(sendFailure.text)
+  }
+
+  /** The question a failed turn was answering, so it can be asked again. */
+  function questionBefore(index: number): string | null {
+    const previous = messages[index - 1]
+    if (previous?.role !== 'user') return null
+    return messageText(previous).trim() || null
+  }
 
   return (
     <div className="flex min-h-0 flex-1">
@@ -129,7 +151,7 @@ export function ChatThread({ threadId, hasTitle, onThreadChanged }: ChatThreadPr
                   <Skeleton className="h-3 w-3/4" />
                 </div>
               </div>
-            ) : messages.length === 0 ? (
+            ) : messages.length === 0 && !historyError ? (
               <ChatEmptyState
                 onPick={(question) => {
                   setInput(question)
@@ -138,28 +160,48 @@ export function ChatThread({ threadId, hasTitle, onThreadChanged }: ChatThreadPr
               />
             ) : (
               <div className="space-y-6">
-                {messages.map((message, index) =>
-                  message.role === 'assistant' ? (
-                    <AssistantMessage
-                      key={message.id}
-                      message={message}
-                      onCitationSelect={(messageId, citation, chip) => {
-                        lastChipRef.current = chip
-                        setSelected({ messageId, citationIndex: citation.citation_index })
-                      }}
-                      selectedCitationIndex={
-                        selected?.messageId === message.id ? selected.citationIndex : null
-                      }
-                      streaming={busy && index === messages.length - 1}
-                    />
-                  ) : (
-                    <div className="flex justify-end" key={message.id}>
-                      <div className="max-w-[75%] rounded-xl bg-primary px-3.5 py-2.5 text-primary-foreground">
-                        {messageText(message)}
+                {messages.map((message, index) => {
+                  if (message.role !== 'assistant') {
+                    return (
+                      <div className="flex justify-end" key={message.id}>
+                        <div className="max-w-[75%] rounded-xl bg-primary px-3.5 py-2.5 text-primary-foreground">
+                          {messageText(message)}
+                        </div>
                       </div>
+                    )
+                  }
+
+                  const errorCode = messageErrorCode(message)
+                  const failure = errorCode ? describeStreamError(errorCode) : null
+                  const question = failure ? questionBefore(index) : null
+                  return (
+                    <div className="space-y-3" key={message.id}>
+                      {messageText(message) ? (
+                        <AssistantMessage
+                          message={message}
+                          onCitationSelect={(messageId, citation, chip) => {
+                            lastChipRef.current = chip
+                            setSelected({ messageId, citationIndex: citation.citation_index })
+                          }}
+                          selectedCitationIndex={
+                            selected?.messageId === message.id ? selected.citationIndex : null
+                          }
+                          streaming={busy && index === messages.length - 1}
+                        />
+                      ) : null}
+                      {failure ? (
+                        <ErrorNotice
+                          description={failure.description}
+                          onRetry={
+                            question && !busy ? () => void send(question) : undefined
+                          }
+                          title={failure.title}
+                          tone={failure.tone}
+                        />
+                      ) : null}
                     </div>
-                  ),
-                )}
+                  )
+                })}
 
                 {busy ? <RunStatus stages={stages} /> : null}
 
@@ -174,9 +216,13 @@ export function ChatThread({ threadId, hasTitle, onThreadChanged }: ChatThreadPr
                     }
                     description={activeError.description}
                     onRetry={
-                      activeError.canRetry && historyError
-                        ? () => setHistoryToken((token) => token + 1)
-                        : undefined
+                      !activeError.canRetry
+                        ? undefined
+                        : sendFailure
+                          ? retryLastSend
+                          : historyError
+                            ? () => setHistoryToken((token) => token + 1)
+                            : undefined
                     }
                     title={activeError.title}
                     tone={activeError.tone}

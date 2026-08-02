@@ -88,6 +88,11 @@ class MemoryChatStore:
     async def append_grounded_answer(self, thread_id, content, message_data, citations):
         return await self.append_message(thread_id, "assistant", content, message_data)
 
+    async def delete_thread(self, user_id: UUID, thread_id: UUID):
+        await self.get_thread(user_id, thread_id)
+        self.owner_id = None
+        self.messages.clear()
+
 
 class FakeRetriever:
     async def retrieve(self, query: str, **kwargs):
@@ -162,6 +167,53 @@ async def test_create_thread_returns_thread(user, store):
     assert response.status_code == status.HTTP_200_OK
     assert response.json()["title"] == "Apple revenue mix"
     assert store.ensured_users == [(user.id, user.email)]
+
+
+@pytest.mark.anyio
+async def test_delete_thread_removes_it_from_the_thread_list(user, store):
+    async def override_user():
+        return user
+
+    app.dependency_overrides[get_current_user] = override_user
+    app.dependency_overrides[get_chat_store] = lambda: store
+    await store.create_thread(user.id, "Apple revenue mix")
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.delete(f"/chat/threads/{store.thread_id}")
+        remaining = await client.get("/chat/threads")
+
+    assert response.status_code == status.HTTP_204_NO_CONTENT
+    assert remaining.json() == []
+
+
+@pytest.mark.anyio
+async def test_delete_thread_refuses_another_users_thread(user, store):
+    async def override_user():
+        return user
+
+    app.dependency_overrides[get_current_user] = override_user
+    app.dependency_overrides[get_chat_store] = lambda: store
+    await store.create_thread(uuid4(), "Someone else's chat")
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.delete(f"/chat/threads/{store.thread_id}")
+
+    assert response.status_code == status.HTTP_403_FORBIDDEN
+    assert store.owner_id is not None
+
+
+@pytest.mark.anyio
+async def test_delete_missing_thread_returns_not_found(user, store):
+    async def override_user():
+        return user
+
+    app.dependency_overrides[get_current_user] = override_user
+    app.dependency_overrides[get_chat_store] = lambda: store
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.delete(f"/chat/threads/{uuid4()}")
+
+    assert response.status_code == status.HTTP_404_NOT_FOUND
 
 
 @pytest.mark.anyio

@@ -1,8 +1,8 @@
-import { FileText } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
 
 import { useAuth } from '@/auth/auth-context'
+import { LogoMark } from '@/components/brand/Logo'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -43,12 +43,12 @@ export function AuthPage({ mode }: { mode: 'sign-in' | 'sign-up' }) {
   return (
     <main className="flex min-h-svh items-center justify-center px-6 py-12">
       <div className="w-full max-w-sm">
-        <div className="mb-6 flex items-center gap-2">
+        <Link className="mb-6 flex items-center gap-2" to="/">
           <div className="flex size-8 items-center justify-center rounded-md bg-primary text-primary-foreground">
-            <FileText className="size-4" />
+            <LogoMark className="size-4" />
           </div>
           <span className="font-medium">Document Copilot</span>
-        </div>
+        </Link>
 
         <Card>
           <CardHeader>

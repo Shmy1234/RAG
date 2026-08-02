@@ -1,7 +1,8 @@
 import { MessagesSquare, PanelLeft } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 
+import { useAuth } from '@/auth/auth-context'
 import { AppSidebar } from '@/components/app/AppSidebar'
 import { ChatThread } from '@/components/chat/ChatThread'
 import { describeError, type ErrorDescription } from '@/components/chat/chat-errors'
@@ -10,14 +11,25 @@ import { ErrorNotice } from '@/components/common/ErrorNotice'
 import { Button } from '@/components/ui/button'
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar'
 import { chatApi, type ChatThread as ChatThreadRecord } from '@/lib/chat-api'
+import { chatRegistry } from '@/lib/chat-registry'
 
 export function ChatPage() {
   const { threadId } = useParams()
   const navigate = useNavigate()
+  const { user } = useAuth()
   const [threads, setThreads] = useState<ChatThreadRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState<ErrorDescription | null>(null)
+
+  const running = useSyncExternalStore(chatRegistry.subscribe, chatRegistry.runningThreads)
+
+  // Chats are cached for the whole session, so a different account must never
+  // inherit the previous one's threads.
+  const userId = user?.id
+  useEffect(() => {
+    if (userId) chatRegistry.setOwner(userId)
+  }, [userId])
 
   const refreshThreads = useCallback(async () => {
     try {
@@ -64,6 +76,18 @@ export function ChatPage() {
     }
   }
 
+  async function deleteThread(id: string) {
+    try {
+      await chatApi.deleteThread(id)
+      chatRegistry.forget(id)
+      setThreads((current) => current.filter((thread) => thread.id !== id))
+      setError(null)
+      if (id === threadId) navigate('/app')
+    } catch (unknownError) {
+      setError(describeError(unknownError))
+    }
+  }
+
   const activeThread = threads.find((thread) => thread.id === threadId)
 
   return (
@@ -72,6 +96,8 @@ export function ChatPage() {
         creating={creating}
         loading={loading}
         onCreateThread={() => void createThread()}
+        onDeleteThread={(id) => void deleteThread(id)}
+        runningThreadIds={running}
         threads={threads}
       />
       <SidebarInset className="min-h-svh">
@@ -92,6 +118,9 @@ export function ChatPage() {
             />
           </div>
         ) : threadId ? (
+          // Remounting per thread keeps drafts, citation selection, and history
+          // state from leaking across chats. The runs themselves live in the
+          // registry, so they survive the unmount.
           <ChatThread
             hasTitle={Boolean(activeThread?.title)}
             key={threadId}

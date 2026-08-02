@@ -15,6 +15,16 @@
   /* Filing identity and figures read as records, not prose. System stack — no font dependency. */
   --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 
+  /* Landing page only. The face is loaded inside the lazy home chunk, so the
+     workspace never pays for it — the fallback here is what /app resolves to. */
+  --display: "Geist Mono Variable", var(--mono);
+
+  /* Filings render on a sheet, not on chrome, so the document reads as a document. */
+  --paper: oklch(1 0 0);
+  --paper-foreground: oklch(0.145 0 0);
+  /* The one non-neutral value on the site. It means exactly one thing: retrieved. */
+  --highlight: oklch(0.93 0.04 85);
+
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
@@ -55,6 +65,9 @@
 .dark {
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);
+  --paper: oklch(0.185 0 0);
+  --paper-foreground: oklch(0.985 0 0);
+  --highlight: oklch(0.42 0.05 85);
   --card: oklch(0.205 0 0);
   --card-foreground: oklch(0.985 0 0);
   --popover: oklch(0.205 0 0);
@@ -90,6 +103,10 @@
   --font-heading: var(--font-sans);
   --font-sans: "Geist Variable", system-ui, sans-serif;
   --font-mono: var(--mono);
+  --font-display: var(--display);
+  --color-paper: var(--paper);
+  --color-paper-foreground: var(--paper-foreground);
+  --color-highlight: var(--highlight);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);

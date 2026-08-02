@@ -212,7 +212,7 @@ def test_all_routes_persist_route_and_non_negative_timing(route):
     assert message_data["citations"] == store.grounded_calls[0][3]
 
 
-def test_deep_rag_does_not_persist_assistant_on_grounding_failure():
+def test_grounding_failure_persists_typed_failure_instead_of_an_answer():
     store = FakeStore()
     invalid = AgentAnswer(answer="Unsupported.", citations=[])
 
@@ -223,8 +223,83 @@ def test_deep_rag_does_not_persist_assistant_on_grounding_failure():
             agent_runner=EvidenceAgent(invalid),
         )
 
-    assert [message["role"] for message in store.messages] == ["user"]
     assert store.grounded_calls == []
+    assert [message["role"] for message in store.messages] == ["user", "assistant"]
+    failure = store.messages[1]
+    assert failure["content"] == ""
+    assert failure["message_data"]["error_code"] == "grounding_failed"
+    assert failure["message_data"]["route"] == "deep_rag"
+
+
+def test_routing_failure_records_a_failure_row_with_no_route():
+    store = FakeStore()
+
+    class BrokenRouter:
+        async def route(self, prompt):
+            raise RuntimeError("router down")
+
+    with pytest.raises(RuntimeError):
+        asyncio.run(
+            run_chat_turn(
+                user_id=uuid4(),
+                thread_id=uuid4(),
+                user_text="What happened to Services revenue?",
+                store=store,
+                router=BrokenRouter(),
+                quick_rag_runner=FakeQuickRagRunner(),
+                agent_runner=EvidenceAgent(),
+                retriever=FakeRetriever(),
+                grounding_validator=GroundingValidator(),
+                clock=clock(),
+            )
+        )
+
+    failure = store.messages[1]
+    assert failure["message_data"] == {
+        "phase": 8,
+        "route": None,
+        "error_code": "processing_failed",
+    }
+
+
+def test_failure_row_write_error_does_not_mask_the_original_failure():
+    class UnwritableStore(FakeStore):
+        async def append_message(self, thread_id, role, content, message_data):
+            if role == "assistant":
+                raise RuntimeError("insert failed")
+            return await super().append_message(thread_id, role, content, message_data)
+
+    with pytest.raises(GroundingError):
+        run_turn(
+            RouteDecision(route="deep_rag"),
+            store=UnwritableStore(),
+            agent_runner=EvidenceAgent(AgentAnswer(answer="Unsupported.", citations=[])),
+        )
+
+
+def test_route_is_reported_before_the_route_executes():
+    order = []
+
+    class ReportingQuickRag(FakeQuickRagRunner):
+        async def run(self, prompt, *, retriever, grounding_validator, on_stage):
+            order.append("execute")
+            return await super().run(
+                prompt,
+                retriever=retriever,
+                grounding_validator=grounding_validator,
+                on_stage=on_stage,
+            )
+
+    async def report_route(route):
+        order.append(("route", route))
+
+    run_turn(
+        RouteDecision(route="quick_rag"),
+        quick_rag_runner=ReportingQuickRag(),
+        on_route=report_route,
+    )
+
+    assert order == [("route", "quick_rag"), "execute"]
 
 
 def test_successful_turn_logs_route_and_timings_without_prompt(monkeypatch):

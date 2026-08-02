@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(perl -pi -e 's/async def run_turn\\\\\\(on_stage, on_answer_ready\\\\\\):/async def run_turn\\(on_stage, on_answer_ready, on_route\\):/g' tests/chat/test_streaming.py)",
+      "Bash(.venv/bin/python -m pytest tests/chat tests/api tests/database -q)",
+      "Bash(.venv/bin/python -m pytest tests/ -q -x --ignore=tests/retrieval)",
+      "Bash(npx eslint *)",
+      "Bash(.venv/bin/python -m pytest tests/ -q)",
+      "Bash(.venv/bin/python -m ruff check app tests)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://127.0.0.1:8010/chat/threads)",
+      "Bash(curl -s http://127.0.0.1:8010/openapi.json)",
+      "Bash(python3 -c \"import json,sys; p=json.load\\(sys.stdin\\)['paths']; [print\\(m.upper\\(\\), k\\) for k,v in p.items\\(\\) for m in v]\")",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://127.0.0.1:8000/health)",
+      "Bash(pkill -f \"ms-playwright-mcp/mcp-chrome-6b265bd\")",
+      "mcp__plugin_playwright_playwright__browser_hover",
+      "mcp__plugin_playwright_playwright__browser_click",
+      "Bash(perl -pi -e \"s/onDelete=\\\\{\\\\\\(\\\\\\) => \\\\{\\\\}\\\\}/onDelete={\\(id\\) => \\(\\(window as any\\).__deleted ??= []\\).push\\(id\\)}/g; s/onDelete=\\\\{\\\\\\(\\\\\\) => \\\\{\\\\}\\\\}/x/g\" src/preview.tsx)",
+      "Bash(pkill -f \"uvicorn app.main:app --port 8000\")",
+      "Bash(pkill -f \"vite --port 5183\")"
+    ]
+  }
+}

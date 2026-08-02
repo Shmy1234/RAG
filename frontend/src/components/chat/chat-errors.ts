@@ -45,17 +45,26 @@ export function describeStreamError(code: StreamErrorCode): ErrorDescription {
  * Maps transport failures to recovery guidance. Backend exception text is never
  * read off the error — only its shape.
  */
+const offline: ErrorDescription = {
+  tone: 'offline',
+  title: "Can't reach the backend",
+  description:
+    'The request never arrived. Check that the API is running and reachable, then try again.',
+  canRetry: true,
+}
+
+/** The streaming transport reports a dropped connection as a fetch TypeError. */
+function isDroppedConnection(error: unknown): boolean {
+  if (!(error instanceof TypeError)) return false
+  const message = error.message.toLowerCase()
+  return message.includes('fetch') || message.includes('network')
+}
+
 export function describeError(error: unknown): ErrorDescription {
+  if (isDroppedConnection(error)) return offline
+
   if (error instanceof ApiError) {
-    if (error.isNetworkError) {
-      return {
-        tone: 'offline',
-        title: "Can't reach the backend",
-        description:
-          'The request never arrived. Check that the API is running and reachable, then try again.',
-        canRetry: true,
-      }
-    }
+    if (error.isNetworkError) return offline
     if (error.status === 401) {
       return {
         tone: 'failure',

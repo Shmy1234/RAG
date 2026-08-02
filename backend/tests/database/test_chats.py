@@ -21,8 +21,13 @@ class FakeQuery:
         self.order_key: str | None = None
         self.limit_count: int | None = None
         self.insert_payload: dict[str, object] | None = None
+        self.deleting = False
 
     def select(self, _columns: str):
+        return self
+
+    def delete(self):
+        self.deleting = True
         return self
 
     def eq(self, key: str, value: object):
@@ -58,6 +63,10 @@ class FakeQuery:
             for row in self.rows
             if all(str(row.get(key)) == str(value) for key, value in self.filters.items())
         ]
+        if self.deleting:
+            for row in rows:
+                self.rows.remove(row)
+            return FakeResponse(rows)
         if self.order_key is not None:
             rows.sort(key=lambda row: row[self.order_key], reverse=self.reverse)
         if self.limit_count is not None:
@@ -147,6 +156,37 @@ async def test_chat_store_rejects_thread_owned_by_another_user(ids) -> None:
 
     with pytest.raises(ForbiddenThreadError):
         await ChatStore(client).get_thread(user_id, thread_id)
+
+
+@pytest.mark.anyio
+async def test_chat_store_deletes_only_the_requested_thread(ids) -> None:
+    user_id, _other_user_id, thread_id = ids
+    kept_id = uuid4()
+    client = FakeClient(
+        {
+            "chat_threads": [
+                {"id": str(thread_id), "user_id": str(user_id)},
+                {"id": str(kept_id), "user_id": str(user_id)},
+            ]
+        }
+    )
+
+    await ChatStore(client).delete_thread(user_id, thread_id)
+
+    assert [row["id"] for row in client.tables["chat_threads"]] == [str(kept_id)]
+
+
+@pytest.mark.anyio
+async def test_chat_store_refuses_to_delete_another_users_thread(ids) -> None:
+    user_id, other_user_id, thread_id = ids
+    client = FakeClient(
+        {"chat_threads": [{"id": str(thread_id), "user_id": str(other_user_id)}]}
+    )
+
+    with pytest.raises(ForbiddenThreadError):
+        await ChatStore(client).delete_thread(user_id, thread_id)
+
+    assert len(client.tables["chat_threads"]) == 1
 
 
 @pytest.mark.anyio

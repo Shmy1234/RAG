@@ -38,7 +38,7 @@ def stages_in(parts: list[str]) -> list[str]:
 
 
 def test_stream_chat_turn_emits_stages_in_order_before_the_answer():
-    async def run_turn(on_stage, on_answer_ready):
+    async def run_turn(on_stage, on_answer_ready, on_route):
         await on_stage("routing")
         await on_stage("searching")
         await on_stage("analyzing")
@@ -55,8 +55,46 @@ def test_stream_chat_turn_emits_stages_in_order_before_the_answer():
     assert parts[-1] == 'data: {"type": "finish", "finishReason": "stop"}\n\n'
 
 
+def test_stream_chat_turn_emits_the_route_the_turn_chose():
+    async def run_turn(on_stage, on_answer_ready, on_route):
+        await on_stage("routing")
+        await on_route("direct")
+        return GroundedAnswer(answer="Hello.")
+
+    parts = collect_turn(run_turn)
+    routes = [
+        json.loads(part.removeprefix("data: ").strip())["data"]["route"]
+        for part in parts
+        if '"data-route"' in part
+    ]
+
+    assert routes == ["direct"]
+    route_index = next(index for index, part in enumerate(parts) if '"data-route"' in part)
+    first_delta = min(index for index, part in enumerate(parts) if '"text-delta"' in part)
+    assert route_index < first_delta
+
+
+def test_disconnected_turn_keeps_running_after_the_stream_closes():
+    """A closed browser tab must not abandon a turn before it persists."""
+
+    async def verify():
+        finished = asyncio.Event()
+
+        async def run_turn(on_stage, on_answer_ready, on_route):
+            await asyncio.sleep(0)
+            finished.set()
+            return GroundedAnswer(answer="Persisted anyway.")
+
+        stream = stream_chat_turn(run_turn)
+        await anext(stream)
+        await stream.aclose()
+        await asyncio.wait_for(finished.wait(), timeout=0.1)
+
+    asyncio.run(verify())
+
+
 def test_stream_chat_turn_accepts_short_non_rag_stage_sequence():
-    async def run_turn(on_stage, on_answer_ready):
+    async def run_turn(on_stage, on_answer_ready, on_route):
         await on_stage("routing")
         await on_stage("saving")
         return GroundedAnswer(answer="Hello.")
@@ -68,7 +106,7 @@ def test_stream_chat_turn_accepts_short_non_rag_stage_sequence():
 
 
 def test_stream_chat_turn_reports_retrieval_failure_without_answer_text():
-    async def run_turn(on_stage, on_answer_ready):
+    async def run_turn(on_stage, on_answer_ready, on_route):
         await on_stage("searching")
         raise RetrievalError("pgvector connection reset at 10.0.0.4:5432")
 
@@ -81,7 +119,7 @@ def test_stream_chat_turn_reports_retrieval_failure_without_answer_text():
 
 
 def test_stream_chat_turn_reports_grounding_failure():
-    async def run_turn(on_stage, on_answer_ready):
+    async def run_turn(on_stage, on_answer_ready, on_route):
         await on_stage("searching")
         await on_stage("analyzing")
         await on_stage("validating")
@@ -96,7 +134,7 @@ def test_stream_chat_turn_reports_grounding_failure():
 def test_stream_chat_turn_never_leaks_exception_text():
     secret = "postgres://analyst:hunter2@db.internal:5432"
 
-    async def run_turn(on_stage, on_answer_ready):
+    async def run_turn(on_stage, on_answer_ready, on_route):
         await on_stage("searching")
         raise RuntimeError(secret)
 
@@ -117,7 +155,7 @@ def test_stream_chat_turn_logs_unexpected_failure_with_traceback(monkeypatch):
 
     monkeypatch.setattr("app.chat.streaming.logger", FakeLogger())
 
-    async def run_turn(on_stage, on_answer_ready):
+    async def run_turn(on_stage, on_answer_ready, on_route):
         await on_stage("searching")
         raise RuntimeError("database unavailable")
 
@@ -135,7 +173,7 @@ def test_stream_opens_before_slow_turn_work_completes():
     async def verify():
         release = asyncio.Event()
 
-        async def run_turn(on_stage, on_answer_ready):
+        async def run_turn(on_stage, on_answer_ready, on_route):
             await release.wait()
             return GroundedAnswer(answer="Finished.")
 
@@ -155,7 +193,7 @@ def test_instant_text_arrives_before_persistence_finishes():
         release_persistence = asyncio.Event()
         answer = GroundedAnswer(answer="Hello.")
 
-        async def run_turn(on_stage, on_answer_ready):
+        async def run_turn(on_stage, on_answer_ready, on_route):
             await on_stage("routing")
             await on_answer_ready(answer)
             await on_stage("saving")
@@ -183,7 +221,7 @@ def test_instant_text_arrives_before_persistence_finishes():
 def test_persistence_failure_after_early_text_finishes_with_typed_error():
     answer = GroundedAnswer(answer="Hello.")
 
-    async def run_turn(on_stage, on_answer_ready):
+    async def run_turn(on_stage, on_answer_ready, on_route):
         await on_answer_ready(answer)
         raise RuntimeError("database unavailable")
 

@@ -64,6 +64,15 @@ class ChatStore:
         )
         return dict(response.data[0])
 
+    async def delete_thread(self, user_id: UUID, thread_id: UUID) -> None:
+        await self.get_thread(user_id, thread_id)
+        # Messages and their citations follow via ON DELETE CASCADE.
+        await asyncio.to_thread(
+            lambda: (
+                self.client.table("chat_threads").delete().eq("id", str(thread_id)).execute()
+            )
+        )
+
     async def get_thread(self, user_id: UUID, thread_id: UUID) -> dict[str, object]:
         response = await asyncio.to_thread(
             lambda: (

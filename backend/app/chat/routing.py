@@ -16,6 +16,8 @@ ROUTING_INSTRUCTIONS = """You route requests for an SEC filing research assistan
 
 Choose direct only for guidance about how to use this product and its filing-research features.
 When choosing direct, provide the concise final answer in the answer field.
+A request that mixes product guidance with a question about what the corpus contains is still
+direct: describe what the assistant does and invite a specific company-and-period question.
 
 Choose quick_rag for a focused company or filing question likely answerable with one corpus search.
 Choose deep_rag for comparisons, multi-part synthesis, longitudinal analysis, broad summaries, or
@@ -37,12 +39,25 @@ _SAFE_DIRECT_PATTERNS = tuple(
         ),
     )
 )
-_PRODUCT_HELP = re.compile(
-    r"\b(?:citation|citations|source evidence|source panel|quick research|deep research)\b"
-)
 _FILING_FACT = re.compile(
     r"\b(?:apple|microsoft|nvidia|amazon|alphabet|google|aapl|msft|nvda|amzn|googl|"
-    r"revenue|income|margin|10-k|10-q|20\d{2})\b"
+    r"revenue|sales|income|earnings|eps|margin|cash flow|guidance|fiscal|"
+    r"10-k|10-q|8-k|q[1-4]|20\d{2})\b"
+)
+# Questions about what the workspace covers. Answered from a fixed description of
+# scope rather than retrieval: the corpus is not itself a citable passage, so RAG
+# can only fail the grounding contract on these.
+_CORPUS_QUESTION = re.compile(
+    r"\b(?:what (?:filings|documents|companies|data)|which (?:filings|companies)|"
+    r"what (?:are you|were you|have you been) trained on|what(?:'s| is) in (?:the|your) corpus|"
+    r"what do you (?:cover|know about)|how (?:much|many) (?:filings|documents))\b"
+)
+_CORPUS_ANSWER = (
+    "I answer questions from the SEC filings loaded into this workspace, quoting the "
+    "passages an answer rests on. I can't list the corpus back to you, so the quickest "
+    "way to see what's here is to ask about a specific company and period — for example, "
+    "\"What were Apple's total net sales in fiscal 2025?\" If a filing isn't loaded, "
+    "you'll get an explicit no-evidence answer rather than a guess."
 )
 _INSTANT_RESPONSES = {
     "hi": "Hi! How can I help with your filing research?",
@@ -98,17 +113,33 @@ route_agent = Agent(
 )
 
 
-def instant_response(prompt: str) -> str | None:
+def _normalize(prompt: str) -> str:
     normalized = " ".join(prompt.split()).casefold()
-    normalized = _TRAILING_PUNCTUATION.sub("", normalized).strip()
-    return _INSTANT_RESPONSES.get(normalized)
+    return _TRAILING_PUNCTUATION.sub("", normalized).strip()
+
+
+def instant_response(prompt: str) -> str | None:
+    normalized = _normalize(prompt)
+    if normalized in _INSTANT_RESPONSES:
+        return _INSTANT_RESPONSES[normalized]
+    if _CORPUS_QUESTION.search(normalized) and not _FILING_FACT.search(normalized):
+        return _CORPUS_ANSWER
+    return None
 
 
 def direct_response_allowed(prompt: str) -> bool:
-    normalized = " ".join(prompt.split()).casefold()
+    """Gate on the presence of a filing fact, not on recognised help phrasing.
+
+    The model already declines `direct` for research questions. The gate exists to
+    catch the cases where it doesn't, so it only has to reject prompts carrying a
+    company, metric, form, or period. Requiring a phrasing allowlist instead sent
+    compound questions like "what can you do, and what filings do you have?"
+    through retrieval, where they could only fail grounding.
+    """
+    normalized = _normalize(prompt)
     if any(pattern.match(normalized) for pattern in _SAFE_DIRECT_PATTERNS):
         return True
-    return bool(_PRODUCT_HELP.search(normalized)) and not _FILING_FACT.search(normalized)
+    return not _FILING_FACT.search(normalized)
 
 
 class ChatRouter:

@@ -64,11 +64,21 @@ export const STREAM_ERROR_CODES = [
 ] as const
 export type StreamErrorCode = (typeof STREAM_ERROR_CODES)[number]
 
+/** How the backend answered a turn. Only the RAG routes carry citations. */
+export const CHAT_ROUTES = ['instant', 'direct', 'quick_rag', 'deep_rag'] as const
+export type ChatRoute = (typeof CHAT_ROUTES)[number]
+
+export function isGroundedRoute(route: ChatRoute | null): boolean {
+  return route === 'quick_rag' || route === 'deep_rag'
+}
+
 export const chatApi = {
   listThreads: () => api.get<ChatThread[]>('/chat/threads'),
   createThread: (title: string | null) => api.post<ChatThread>('/chat/threads', { title }),
   updateThreadTitle: (threadId: string, title: string) =>
     api.patch<ChatThread>(`/chat/threads/${encodeURIComponent(threadId)}`, { title }),
+  deleteThread: (threadId: string) =>
+    api.delete<void>(`/chat/threads/${encodeURIComponent(threadId)}`),
   listMessages: (threadId: string) =>
     api.get<ChatMessage[]>(`/chat/threads/${encodeURIComponent(threadId)}/messages`),
   getCitationSource: (messageId: string, citationIndex: number) =>

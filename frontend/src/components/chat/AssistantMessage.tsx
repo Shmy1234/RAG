@@ -4,9 +4,9 @@ import { useRef, useState } from 'react'
 
 import { AnswerBody } from '@/components/chat/AnswerBody'
 import { CitationChip } from '@/components/chat/CitationChip'
-import { messageCitations, messageText } from '@/components/chat/message-format'
+import { messageCitations, messageRoute, messageText } from '@/components/chat/message-format'
 import { Button } from '@/components/ui/button'
-import type { Citation } from '@/lib/chat-api'
+import { isGroundedRoute, type Citation } from '@/lib/chat-api'
 
 type AssistantMessageProps = {
   message: UIMessage
@@ -26,9 +26,15 @@ export function AssistantMessage({
   const chipRefs = useRef(new Map<number, HTMLButtonElement | null>())
   const [copied, setCopied] = useState(false)
 
-  // A finished answer with no citations is the grounding contract refusing to
-  // guess. Say so plainly rather than letting it pass as a sourced answer.
-  const insufficientEvidence = !streaming && text.length > 0 && citations.length === 0
+  // A finished corpus answer with no citations is the grounding contract refusing
+  // to guess. Say so plainly rather than letting it pass as a sourced answer.
+  // Instant and direct replies never search the corpus, so the absence of
+  // citations says nothing about the evidence — warning there was a false alarm.
+  const insufficientEvidence =
+    !streaming &&
+    text.length > 0 &&
+    citations.length === 0 &&
+    isGroundedRoute(messageRoute(message))
 
   async function copyAnswer() {
     await navigator.clipboard.writeText(text)

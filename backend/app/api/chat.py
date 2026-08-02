@@ -117,6 +117,18 @@ async def update_thread(
         raise map_thread_error(error) from error
 
 
+@router.delete("/threads/{thread_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_thread(
+    thread_id: UUID,
+    user: CurrentUser,
+    store: ChatStoreDependency,
+) -> None:
+    try:
+        await store.delete_thread(user.id, thread_id)
+    except (ThreadNotFoundError, ForbiddenThreadError) as error:
+        raise map_thread_error(error) from error
+
+
 @router.get("/threads/{thread_id}/messages", response_model=list[ChatMessageResponse])
 async def list_messages(
     thread_id: UUID,
@@ -210,7 +222,7 @@ async def stream_chat(
 
     user_text = latest_user_text(request.messages)
 
-    async def run_turn(on_stage: StageCallback, on_answer_ready):
+    async def run_turn(on_stage: StageCallback, on_answer_ready, on_route):
         return await run_chat_turn(
             user_id=user.id,
             thread_id=request.thread_id,
@@ -223,6 +235,7 @@ async def stream_chat(
             grounding_validator=grounding_validator,
             on_stage=on_stage,
             on_answer_ready=on_answer_ready,
+            on_route=on_route,
         )
 
     # Auth and ownership already failed as HTTP above. Everything from here runs
